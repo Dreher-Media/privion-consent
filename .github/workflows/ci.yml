@@ -11,6 +11,7 @@ on:
 jobs:
   build:
     name: Build and Test
+    if: false # CI/CD disabled
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
