@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privion Consent - Vanilla JS Example</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+      }
+      [privion-banner] {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: #fff;
+        border-top: 1px solid #ddd;
+        padding: 1rem;
+        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+        z-index: 1000;
+      }
+      [privion-preferences] {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #fff;
+        border: 1px solid #ddd;
+        padding: 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        z-index: 1001;
+        max-width: 500px;
+        width: 90%;
+      }
+      [privion-preferences][hidden] {
+        display: none;
+      }
+      button {
+        padding: 0.5rem 1rem;
+        margin: 0.25rem;
+        cursor: pointer;
+      }
+      label {
+        display: block;
+        margin: 0.5rem 0;
+      }
+      .content {
+        margin-bottom: 2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Privion Consent - Vanilla JS Example</h1>
+
+    <div class="content">
+      <h2>Content that requires consent</h2>
+
+      <p>
+        <button privion-open-preferences>Open Privacy Preferences</button>
+      </p>
+
+      <div privion="analytics">
+        <h3>Analytics Content</h3>
+        <p>This content is only visible when analytics consent is granted.</p>
+      </div>
+
+      <div privion="marketing">
+        <h3>Marketing Content</h3>
+        <p>This content is only visible when marketing consent is granted.</p>
+      </div>
+
+      <div privion="!marketing">
+        <h3>No Marketing Placeholder</h3>
+        <p>This is visible until marketing consent is granted.</p>
+      </div>
+
+      <div privion="analytics,!marketing">
+        <h3>Analytics but No Marketing</h3>
+        <p>Visible when analytics is granted AND marketing is not granted.</p>
+      </div>
+    </div>
+
+    <!-- Consent Banner -->
+    <div privion-banner hidden>
+      <p>We use cookies and similar technologies to improve your experience.</p>
+      <button privion-reject-all>Reject all</button>
+      <button privion-accept-all>Accept all</button>
+      <button privion-open-preferences>Customize</button>
+    </div>
+
+    <!-- Preferences Dialog -->
+    <div privion-preferences hidden>
+      <h2>Privacy preferences</h2>
+      <label>
+        <input type="checkbox" privion-required="necessary" disabled checked />
+        Necessary (always on)
+      </label>
+      <label>
+        <input type="checkbox" privion-toggle="analytics" />
+        Analytics
+      </label>
+      <label>
+        <input type="checkbox" privion-toggle="marketing" />
+        Marketing
+      </label>
+      <button privion-save-preferences>Save preferences</button>
+    </div>
+
+    <!-- Blocked Script Example -->
+    <script
+      type="privion"
+      privion-category="analytics"
+      src="https://www.googletagmanager.com/gtag/js?id=G-XXXX"
+    ></script>
+
+    <!-- Blocked Iframe Example -->
+    <iframe
+      privion-category="marketing"
+      privion-src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+      src="about:blank"
+      width="560"
+      height="315"
+      frameborder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowfullscreen
+    ></iframe>
+
+    <script type="module">
+      import { createPrivionConsent } from '../packages/consent-core/dist/index.js'
+      import { initPrivionDom } from '../packages/consent-dom/dist/index.js'
+
+      const consent = createPrivionConsent({
+        version: 1,
+        categories: [
+          {
+            id: 'necessary',
+            label: 'Necessary',
+            required: true,
+            defaultStatus: 'granted',
+          },
+          {
+            id: 'analytics',
+            label: 'Analytics',
+            defaultStatus: 'denied',
+          },
+          {
+            id: 'marketing',
+            label: 'Marketing',
+            defaultStatus: 'denied',
+          },
+        ],
+        googleConsentMode: { mode: 'advanced' },
+        storage: {
+          type: 'localStorage',
+        },
+      })
+
+      initPrivionDom(consent, {
+        categoryMatchMode: 'any',
+      })
+
+      // Log consent changes for debugging
+      consent.on('update', (state) => {
+        console.log('Consent updated:', state)
+      })
+    </script>
+  </body>
+</html>

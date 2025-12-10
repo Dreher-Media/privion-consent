@@ -7,6 +7,7 @@ export class UIHandler {
   private consent: PrivionConsent
   private banner: HTMLElement | null = null
   private preferences: HTMLElement | null = null
+  private hasInitializedVisibility = false
 
   constructor(consent: PrivionConsent) {
     this.consent = consent
@@ -20,14 +21,37 @@ export class UIHandler {
     this.banner = root.querySelector('[privion-banner]')
     this.preferences = root.querySelector('[privion-preferences]')
 
-    // Wire up buttons
-    this.wireButtons(root)
-
-    // Initial visibility
-    this.updateBannerVisibility()
+    // Hide by default to prevent loading flash
+    // They will be shown when needed
+    if (this.banner) {
+      this.banner.hidden = true
+    }
     if (this.preferences) {
       this.preferences.hidden = true
     }
+
+    // Wire up buttons
+    this.wireButtons(root)
+
+    // Initial visibility - update once after ready event
+    // The 'ready' event is emitted synchronously in the constructor,
+    // so we need to check if it already fired
+    const updateInitialVisibility = () => {
+      if (!this.hasInitializedVisibility && this.banner) {
+        this.hasInitializedVisibility = true
+        // Use setTimeout to ensure DOM is fully ready and avoid race conditions
+        setTimeout(() => {
+          this.updateBannerVisibility()
+        }, 10)
+      }
+    }
+
+    // Subscribe to ready event (will fire if not already fired)
+    this.consent.on('ready', updateInitialVisibility)
+
+    // Check immediately - if ready already fired, this will update
+    // If not, the event handler above will handle it
+    updateInitialVisibility()
 
     // Subscribe to updates to show banner if needed
     this.consent.on('update', () => {
@@ -59,13 +83,13 @@ export class UIHandler {
       })
     }
 
-    // Open preferences button
-    const openPrefsBtn = root.querySelector('[privion-open-preferences]')
-    if (openPrefsBtn) {
-      openPrefsBtn.addEventListener('click', () => {
+    // Open preferences buttons (can be multiple)
+    const openPrefsBtns = root.querySelectorAll('[privion-open-preferences]')
+    openPrefsBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
         this.showPreferences()
       })
-    }
+    })
 
     // Save preferences button
     const savePrefsBtn = root.querySelector('[privion-save-preferences]')
@@ -138,13 +162,23 @@ export class UIHandler {
     }
 
     const state = this.consent.getState()
-    const hasDecision = Object.values(state.categories).some(
-      (status) => status !== 'unknown'
-    )
+    const config = this.consent.getConfig()
 
-    // Show banner if no decision has been made (all optional categories are unknown)
-    // This is a simple heuristic - you might want to customize this
-    this.banner.hidden = hasDecision
+    // Only check optional categories (required categories are always granted)
+    const optionalCategories = config.categories.filter((cat) => !cat.required)
+
+    // Check if user has made an explicit decision
+    // A decision is made if:
+    // 1. State source indicates user action (banner, preferences) - this means user interacted
+    // 2. OR there's stored consent that differs from defaults (user made a choice before)
+    //
+    // Important: If source is 'api', it means this is initial/default state, so show banner
+    // If source is 'banner' or 'preferences', user already made a choice, so hide banner
+    const hasUserDecision = state.source === 'banner' || state.source === 'preferences'
+
+    // Show banner if no user decision has been made
+    // The banner should show on first visit (source: 'api') regardless of defaultStatus
+    this.banner.hidden = hasUserDecision
   }
 
   /**
