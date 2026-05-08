@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@privion-consent/astro": "workspace:*",
+    "@privion-consent/dom": "workspace:*",
     "astro": "^4.16.0"
   }
 }
