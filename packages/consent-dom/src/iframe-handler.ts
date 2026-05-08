@@ -1,6 +1,6 @@
-import type { PrivionConsent, ConsentState } from '@privion-consent/core';
+import type { ConsentState, PrivionConsent } from '@privion-consent/core';
 import type { CategoryMatchMode } from './types.js';
-import { parseCategories, areCategoriesAllowed } from './utils.js';
+import { areCategoriesAllowed, parseCategories } from './utils.js';
 
 interface IframeElement {
   element: HTMLIFrameElement;
@@ -9,14 +9,22 @@ interface IframeElement {
   activated: boolean;
 }
 
+const IFRAME_SELECTOR = 'iframe[privion-category]';
+
 /**
- * Handle iframe elements with privion-category
+ * Handle iframe elements with privion-category.
+ *
+ * Watches the DOM via `MutationObserver` so iframes injected after
+ * the initial scan still get registered and activated when consent
+ * grants the matching categories.
  */
 export class IframeHandler {
   private consent: PrivionConsent;
   private mode: CategoryMatchMode;
   private iframes: Map<HTMLIFrameElement, IframeElement> = new Map();
-  private unsubscribe: (() => void) | null = null;
+  private unsubscribeUpdate: (() => void) | null = null;
+  private unsubscribeReady: (() => void) | null = null;
+  private observer: MutationObserver | null = null;
 
   constructor(consent: PrivionConsent, mode: CategoryMatchMode = 'any') {
     this.consent = consent;
@@ -27,45 +35,60 @@ export class IframeHandler {
    * Initialize iframe handler
    */
   init(root: HTMLElement | Document = document): void {
-    // Scan for existing iframes
-    this.scanIframes(root);
+    this.scanForIframes(root);
 
-    // Subscribe to consent updates
-    this.unsubscribe = this.consent.on('update', (state) => {
+    this.unsubscribeUpdate = this.consent.on('update', (state) => {
+      this.handleConsentUpdate(state);
+    });
+    this.unsubscribeReady = this.consent.on('ready', (state) => {
       this.handleConsentUpdate(state);
     });
 
-    // Also handle ready event
-    this.consent.on('ready', (state) => {
-      this.handleConsentUpdate(state);
+    this.observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of Array.from(mutation.addedNodes)) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          this.scanForIframes(node as Element);
+        }
+      }
     });
+    const target = root instanceof Document ? root.documentElement : root;
+    if (target) {
+      this.observer.observe(target, { childList: true, subtree: true });
+    }
   }
 
   /**
-   * Scan DOM for iframes with privion-category
+   * Register every privion iframe reachable from `root` — the
+   * element itself (if it matches) plus any matching descendants.
    */
-  private scanIframes(root: HTMLElement | Document): void {
-    const iframes = root.querySelectorAll<HTMLIFrameElement>('iframe[privion-category]');
+  private scanForIframes(root: Element | Document): void {
+    if (root instanceof Element && root.matches?.(IFRAME_SELECTOR)) {
+      this.registerIframe(root as HTMLIFrameElement);
+    }
+    const descendants = root.querySelectorAll<HTMLIFrameElement>(IFRAME_SELECTOR);
+    for (const iframe of Array.from(descendants)) {
+      this.registerIframe(iframe);
+    }
+  }
 
-    for (const iframe of Array.from(iframes)) {
-      if (!this.iframes.has(iframe)) {
-        const categoryAttr = iframe.getAttribute('privion-category');
-        const categories = parseCategories(categoryAttr);
-        const realSrc = iframe.getAttribute('privion-src');
+  private registerIframe(iframe: HTMLIFrameElement): void {
+    if (this.iframes.has(iframe)) return;
 
-        this.iframes.set(iframe, {
-          element: iframe,
-          categories,
-          realSrc,
-          activated: false,
-        });
+    const categoryAttr = iframe.getAttribute('privion-category');
+    const categories = parseCategories(categoryAttr);
+    const realSrc = iframe.getAttribute('privion-src');
 
-        // Try to activate immediately if consent is already granted
-        const state = this.consent.getState();
-        if (areCategoriesAllowed(categories, state, this.mode) && realSrc) {
-          this.activateIframe(iframe);
-        }
-      }
+    this.iframes.set(iframe, {
+      element: iframe,
+      categories,
+      realSrc,
+      activated: false,
+    });
+
+    const state = this.consent.getState();
+    if (areCategoriesAllowed(categories, state, this.mode) && realSrc) {
+      this.activateIframe(iframe);
     }
   }
 
@@ -90,11 +113,7 @@ export class IframeHandler {
     if (!data || data.activated || !data.realSrc) {
       return;
     }
-
-    // Mark as activated
     data.activated = true;
-
-    // Set the real src (only once to avoid reloading)
     iframe.src = data.realSrc;
   }
 
@@ -102,10 +121,12 @@ export class IframeHandler {
    * Cleanup
    */
   destroy(): void {
-    if (this.unsubscribe) {
-      this.unsubscribe();
-      this.unsubscribe = null;
-    }
+    this.unsubscribeUpdate?.();
+    this.unsubscribeReady?.();
+    this.unsubscribeUpdate = null;
+    this.unsubscribeReady = null;
+    this.observer?.disconnect();
+    this.observer = null;
     this.iframes.clear();
   }
 }
