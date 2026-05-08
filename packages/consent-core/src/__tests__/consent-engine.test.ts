@@ -46,6 +46,7 @@ describe('PrivionConsent', () => {
       expect(state.categories.analytics).toBe('denied');
       expect(state.categories.marketing).toBe('denied');
       expect(state.version).toBe(1);
+      expect(state.userDecided).toBe(false);
     });
 
     it('should load stored consent if version matches', () => {
@@ -58,7 +59,8 @@ describe('PrivionConsent', () => {
         },
         updatedAt: new Date().toISOString(),
         version: 1,
-        source: 'api' as const,
+        source: 'banner' as const,
+        userDecided: true,
       };
       localStorage.setItem('privion-consent', JSON.stringify(storedState));
 
@@ -71,6 +73,29 @@ describe('PrivionConsent', () => {
 
       expect(state.categories.analytics).toBe('granted');
       expect(state.categories.marketing).toBe('denied');
+      expect(state.userDecided).toBe(true);
+    });
+
+    it('should migrate stored state without userDecided based on source', () => {
+      // Pre-userDecided stored state from an older version: source 'banner' implies decided
+      const storedState = {
+        categories: {
+          necessary: 'granted',
+          analytics: 'granted',
+          marketing: 'denied',
+        },
+        updatedAt: new Date().toISOString(),
+        version: 1,
+        source: 'banner' as const,
+      };
+      localStorage.setItem('privion-consent', JSON.stringify(storedState));
+
+      const consent = createPrivionConsent({
+        ...config,
+        storage: { type: 'localStorage' },
+      });
+
+      expect(consent.getState().userDecided).toBe(true);
     });
 
     it('should ignore stored consent if version differs', () => {
@@ -83,6 +108,7 @@ describe('PrivionConsent', () => {
         updatedAt: new Date().toISOString(),
         version: 0, // Old version
         source: 'api' as const,
+        userDecided: false,
       };
       localStorage.setItem('privion-consent', JSON.stringify(storedState));
 
@@ -91,6 +117,7 @@ describe('PrivionConsent', () => {
 
       // Should use defaults, not stored values
       expect(state.categories.analytics).toBe('denied');
+      expect(state.userDecided).toBe(false);
     });
   });
 
@@ -121,6 +148,37 @@ describe('PrivionConsent', () => {
       expect(handler).toHaveBeenCalledTimes(1);
       expect(handler.mock.calls[0][0].categories.analytics).toBe('granted');
     });
+
+    it('should default to api source and leave userDecided false', () => {
+      const consent = createPrivionConsent(config);
+      consent.setCategory('analytics', 'granted');
+
+      const state = consent.getState();
+      expect(state.source).toBe('api');
+      expect(state.userDecided).toBe(false);
+    });
+
+    it('should mark userDecided when source is preferences', () => {
+      const consent = createPrivionConsent(config);
+      consent.setCategory('analytics', 'granted', 'preferences');
+
+      const state = consent.getState();
+      expect(state.source).toBe('preferences');
+      expect(state.userDecided).toBe(true);
+    });
+
+    it('should emit update with the source set, not mutated post-emit', () => {
+      const consent = createPrivionConsent(config);
+      const handler = vi.fn();
+
+      consent.on('update', handler);
+      consent.setCategory('analytics', 'granted', 'banner');
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      const emittedState = handler.mock.calls[0][0];
+      expect(emittedState.source).toBe('banner');
+      expect(emittedState.userDecided).toBe(true);
+    });
   });
 
   describe('setMany', () => {
@@ -148,6 +206,33 @@ describe('PrivionConsent', () => {
       expect(state.categories.marketing).toBe('granted');
     });
 
+    it('should mark source as banner and userDecided true', () => {
+      const consent = createPrivionConsent(config);
+      consent.acceptAll();
+
+      const state = consent.getState();
+      expect(state.source).toBe('banner');
+      expect(state.userDecided).toBe(true);
+    });
+
+    it('should emit update with banner source before accept_all fires', () => {
+      const consent = createPrivionConsent(config);
+      const updateHandler = vi.fn();
+      const acceptAllHandler = vi.fn();
+
+      consent.on('update', updateHandler);
+      consent.on('accept_all', acceptAllHandler);
+      consent.acceptAll();
+
+      expect(updateHandler).toHaveBeenCalledTimes(1);
+      // The fragile pre-fix code emitted 'update' with source='api' and then
+      // mutated state.source to 'banner' afterwards — which leaked the wrong
+      // source to anyone listening on 'update'. Verify the source is correct
+      // at emit time now.
+      expect(updateHandler.mock.calls[0][0].source).toBe('banner');
+      expect(updateHandler.mock.calls[0][0].userDecided).toBe(true);
+    });
+
     it('should emit accept_all event', () => {
       const consent = createPrivionConsent(config);
       const handler = vi.fn();
@@ -173,6 +258,15 @@ describe('PrivionConsent', () => {
       expect(state.categories.marketing).toBe('denied');
     });
 
+    it('should mark source as banner and userDecided true', () => {
+      const consent = createPrivionConsent(config);
+      consent.rejectAll();
+
+      const state = consent.getState();
+      expect(state.source).toBe('banner');
+      expect(state.userDecided).toBe(true);
+    });
+
     it('should emit reject_all event', () => {
       const consent = createPrivionConsent(config);
       const handler = vi.fn();
@@ -181,6 +275,35 @@ describe('PrivionConsent', () => {
       consent.rejectAll();
 
       expect(handler).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('userDecided semantics', () => {
+    it('should not flip userDecided on programmatic setCategory', () => {
+      const consent = createPrivionConsent(config);
+      consent.setCategory('analytics', 'granted');
+      consent.setCategory('marketing', 'granted');
+
+      expect(consent.getState().userDecided).toBe(false);
+    });
+
+    it('should preserve userDecided once set, even after later api-source updates', () => {
+      const consent = createPrivionConsent(config);
+      consent.acceptAll();
+      expect(consent.getState().userDecided).toBe(true);
+
+      // Programmatic flip later — userDecided must stay true
+      consent.setCategory('analytics', 'denied');
+      expect(consent.getState().userDecided).toBe(true);
+    });
+
+    it('should mark userDecided when setMany is called with preferences source', () => {
+      const consent = createPrivionConsent(config);
+      consent.setMany({ analytics: 'granted', marketing: 'denied' }, 'preferences');
+
+      const state = consent.getState();
+      expect(state.source).toBe('preferences');
+      expect(state.userDecided).toBe(true);
     });
   });
 

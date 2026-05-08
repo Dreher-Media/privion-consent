@@ -1,6 +1,7 @@
 // Types
 export type {
   ConsentStatus,
+  ConsentSource,
   ConsentState,
   ConsentEvent,
   ConsentCategoryConfig,
