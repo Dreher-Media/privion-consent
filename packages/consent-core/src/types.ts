@@ -52,13 +52,17 @@ export interface BackendSyncConfig {
 }
 
 /**
- * Main configuration for Privion Consent
+ * Main configuration for Privion Consent.
+ *
+ * `storage` accepts either a built-in selector (`StorageConfig`) or a
+ * custom `ConsentStorageAdapter` instance for plugging in alternative
+ * backends (IndexedDB, server-side, React Native AsyncStorage, …).
  */
 export interface PrivionConsentConfig {
   version: number;
   categories: ConsentCategoryConfig[];
   defaultRegionMode?: 'opt-in' | 'opt-out';
-  storage?: StorageConfig;
+  storage?: StorageConfig | import('./storage.js').ConsentStorageAdapter;
   i18n?: Record<string, Record<string, string>>;
   googleConsentMode?: {
     mode: 'basic' | 'advanced';

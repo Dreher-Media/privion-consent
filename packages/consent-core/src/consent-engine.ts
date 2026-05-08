@@ -6,7 +6,7 @@ import type {
   ConsentStatus,
   PrivionConsentConfig,
 } from './types.js';
-import { ConsentStorage } from './storage.js';
+import { resolveStorage, type ConsentStorageAdapter } from './storage.js';
 import { computeGoogleConsentMode, syncGoogleConsentMode } from './google-consent-mode.js';
 
 type EventHandler = (state: ConsentState) => void;
@@ -16,7 +16,7 @@ type EventHandler = (state: ConsentState) => void;
  */
 export class PrivionConsent {
   private config: PrivionConsentConfig;
-  private storage: ConsentStorage;
+  private storage: ConsentStorageAdapter;
   private state: ConsentState;
   private eventHandlers: Map<ConsentEvent, Set<EventHandler>> = new Map();
   private isReady: boolean = false;
@@ -24,7 +24,7 @@ export class PrivionConsent {
 
   constructor(config: PrivionConsentConfig) {
     this.config = config;
-    this.storage = new ConsentStorage(config.storage);
+    this.storage = resolveStorage(config.storage);
 
     // Initialize state from storage or defaults
     this.state = this.initializeState();
