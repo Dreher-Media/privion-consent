@@ -79,6 +79,22 @@ export interface BackendSyncConfig {
 }
 
 /**
+ * One step in a chain of schema migrations.
+ *
+ * `from` is the stored state's `version`; `to` is the version the
+ * `migrate` callback produces. The callback receives the previous
+ * stored state and returns a new `ConsentState` whose `version` MUST
+ * equal `to` — anything else is treated as a failed migration and the
+ * engine falls back to defaults (forcing the banner). Use this for
+ * category renames, splits, merges, or default-status changes.
+ */
+export interface ConsentMigration {
+  from: number;
+  to: number;
+  migrate(old: ConsentState): ConsentState;
+}
+
+/**
  * Structured failure reported via `BackendSyncConfig.onSyncError`.
  */
 export interface BackendSyncError {
@@ -128,6 +144,13 @@ export interface PrivionConsentConfig {
   /** Mode used when `region` doesn't match any `regionRules` entry. */
   defaultRegionMode?: RegionMode;
   storage?: StorageConfig | import('./storage.js').ConsentStorageAdapter;
+  /**
+   * Forward-only schema migrations applied to stored state when
+   * `config.version` increments. Without a complete chain from the
+   * stored version to the current one, the engine falls back to
+   * defaults (re-prompting the user).
+   */
+  migrations?: ConsentMigration[];
   googleConsentMode?: {
     mode: 'basic' | 'advanced';
   };

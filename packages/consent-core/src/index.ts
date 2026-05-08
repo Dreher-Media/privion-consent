@@ -9,6 +9,7 @@ export type {
   StorageConfig,
   BackendSyncConfig,
   BackendSyncError,
+  ConsentMigration,
   PrivionConsentConfig,
   RegionMode,
 } from './types.js';
