@@ -72,7 +72,9 @@ interface PrivionConsentConfig {
 
 ## 3. Attribute schema (DOM adapter)
 
-The `@privion-consent/dom` adapter inspects the page for the following attributes. They are framework-agnostic — Astro, vanilla HTML, server-rendered React, anything — provided the host app does not strip them at build time.
+The `@privion-consent/dom` adapter inspects the page for the following attributes. They are framework-agnostic — Astro, vanilla HTML, server-rendered React, anything — provided the host app does not strip them at build time. The adapter watches the DOM via `MutationObserver`, so elements injected after `initPrivionDom(...)` runs (SPA hydration, async-loaded markup, framework islands) are picked up automatically without a re-init.
+
+`initPrivionDom` returns a `PrivionDomHandle` whose `destroy()` method disconnects every observer, unsubscribes every consent listener, and clears the tracked element maps. Call it from SPA route-change cleanup and test teardown.
 
 ### 3.1 Script gating
 
@@ -348,7 +350,7 @@ export type {
 } from '@privion-consent/core';
 
 // DOM bindings
-export { initPrivionDom } from '@privion-consent/dom';
+export { initPrivionDom, type PrivionDomHandle } from '@privion-consent/dom';
 // Optional default styles (CSS, see §12). Skip the import to keep
 // the bundled banner / preferences components headless.
 import '@privion-consent/dom/styles.css';
@@ -358,6 +360,7 @@ export {
   ConsentProvider,
   ConsentBanner,
   ConsentPreferences,
+  ConsentErrorBoundary,
   useConsent,
   useConsentI18n,
   useConsentCategory,
