@@ -366,7 +366,55 @@ export {
   mergeI18n,
   type ConsentI18n,
 } from '@privion-consent/react';
+
+// Astro bindings (path-based imports for the .astro components)
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
+import CategoryToggle from '@privion-consent/astro/CategoryToggle.astro';
+
+export {
+  resolveRegion,
+  DEFAULT_REGION_HEADERS,
+  DEFAULT_IGNORED_REGION_VALUES,
+  type ResolveRegionOptions,
+} from '@privion-consent/astro/server';
+
+export { bootPrivion, readSerializedConfig } from '@privion-consent/astro/boot';
 ```
+
+## 11. Astro support
+
+The `@privion-consent/astro` package wraps the engine + DOM adapter for Astro projects with three pieces:
+
+### 11.1 `<PrivionScript>` component
+
+Drop into your layout's `<head>` once. Takes the engine `config` as a prop, serializes it as JSON into a `<script type="application/json">` block, then loads a small bundled script that calls `bootPrivion(config)` to construct the engine and wire the DOM adapter. The engine instance lands on `window.__privionConsent` so other client code can subscribe to events without re-importing the engine.
+
+Callbacks (`onSyncError`, `payloadTransform`, custom storage adapters, region resolvers) cannot survive JSON serialization — host apps that need them should subscribe via `window.__privionConsent` on a separate `is:inline` script and call `consent.on('update', …)` etc.
+
+### 11.2 SSR-rendered components
+
+```astro
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
+```
+
+`<ConsentBanner>` and `<ConsentPreferences>` render server-side with `hidden` set, then the DOM adapter unhides them on the client according to `state.userDecided`. This keeps the SSR markup empty-looking until hydration — no flash of an unwanted banner for returning visitors. Both components accept default-slot overrides if the bundled markup doesn't match your design.
+
+### 11.3 Server-side region resolution
+
+```ts
+import { resolveRegion } from '@privion-consent/astro/server';
+const region = resolveRegion(Astro.request.headers);
+```
+
+Reads the user's region from a configurable list of CDN headers (Cloudflare `cf-ipcountry`, Vercel `x-vercel-ip-country`, Netlify `x-country`, Akamai EdgeScape) — first non-empty, non-sentinel value wins. Pass the resolved region to `<PrivionScript>` via `config.region` and the engine picks the right `regionRules` entry on first paint.
+
+### 11.4 React-in-Astro
+
+If your Astro project already has React island infrastructure (`@astrojs/react`), you can use `@privion-consent/react` directly with `client:only="react"` instead of `@privion-consent/astro`. Native `.astro` components are recommended by default because they ship no React runtime and SSR cleanly without hydration boundaries; reach for the React package only when you need the hooks (`useConsentCategory`, `useConsentI18n`) inside an existing React component tree.
 
 ## 10. Out of scope for v1
 
