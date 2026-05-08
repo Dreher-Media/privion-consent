@@ -92,16 +92,41 @@ export interface BackendSyncError {
 }
 
 /**
+ * Region-keyed consent mode.
+ *
+ * - `opt-in`: explicit consent required before non-essential storage —
+ *   the GDPR / ePrivacy / TTDSG default. Categories without an explicit
+ *   `defaultStatus` start as `'unknown'`, forcing the banner.
+ * - `opt-out`: consent is assumed unless the user actively rejects.
+ *   Categories without an explicit `defaultStatus` start as `'granted'`.
+ *
+ * The library does NOT ship a built-in geo database. Host apps resolve
+ * the user's region (typically from `cf-ipcountry`, a GeoIP service, or
+ * browser locale) and pass it via `config.region`.
+ */
+export type RegionMode = 'opt-in' | 'opt-out';
+
+/**
  * Main configuration for Privion Consent.
  *
  * `storage` accepts either a built-in selector (`StorageConfig`) or a
  * custom `ConsentStorageAdapter` instance for plugging in alternative
  * backends (IndexedDB, server-side, React Native AsyncStorage, …).
+ *
+ * `region` + `regionRules` + `defaultRegionMode` together control how
+ * categories without an explicit `defaultStatus` are initialized — see
+ * `RegionMode`. If none of these are set, the legacy default of
+ * `'unknown'` (always show the banner) is preserved.
  */
 export interface PrivionConsentConfig {
   version: number;
   categories: ConsentCategoryConfig[];
-  defaultRegionMode?: 'opt-in' | 'opt-out';
+  /** ISO 3166-1 alpha-2 country code (e.g. 'DE', 'US'). */
+  region?: string;
+  /** Per-region mode overrides. Region codes are case-insensitive. */
+  regionRules?: Record<string, { mode: RegionMode }>;
+  /** Mode used when `region` doesn't match any `regionRules` entry. */
+  defaultRegionMode?: RegionMode;
   storage?: StorageConfig | import('./storage.js').ConsentStorageAdapter;
   i18n?: Record<string, Record<string, string>>;
   googleConsentMode?: {

@@ -5,6 +5,7 @@ import type {
   ConsentState,
   ConsentStatus,
   PrivionConsentConfig,
+  RegionMode,
 } from './types.js';
 import { resolveStorage, type ConsentStorageAdapter } from './storage.js';
 import { computeGoogleConsentMode, syncGoogleConsentMode } from './google-consent-mode.js';
@@ -64,13 +65,17 @@ export class PrivionConsent {
     }
 
     // Build initial state from config
+    const regionMode = resolveRegionMode(this.config);
+    const fallback: ConsentStatus = regionMode === 'opt-out' ? 'granted' : 'unknown';
     const categories: Record<string, ConsentStatus> = {};
 
     for (const category of this.config.categories) {
       if (category.required) {
         categories[category.id] = 'granted';
       } else {
-        categories[category.id] = category.defaultStatus || 'unknown';
+        // Per-category defaultStatus always wins over regional defaults so
+        // host apps can pin specific categories regardless of region.
+        categories[category.id] = category.defaultStatus ?? fallback;
       }
     }
 
@@ -399,6 +404,27 @@ export class PrivionConsent {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve the effective region mode for a config:
+ *
+ * - `regionRules[region]` (case-insensitive) wins if present.
+ * - Otherwise `defaultRegionMode` is used.
+ * - Otherwise `undefined` — callers fall back to legacy behavior
+ *   (`'unknown'` defaults).
+ */
+export function resolveRegionMode(config: PrivionConsentConfig): RegionMode | undefined {
+  const { region, regionRules, defaultRegionMode } = config;
+  if (region && regionRules) {
+    const upper = region.toUpperCase();
+    for (const key of Object.keys(regionRules)) {
+      if (key.toUpperCase() === upper) {
+        return regionRules[key].mode;
+      }
+    }
+  }
+  return defaultRegionMode;
 }
 
 /**
