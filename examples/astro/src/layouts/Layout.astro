@@ -4,6 +4,8 @@ import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
 import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
 import { resolveRegion } from '@privion-consent/astro/server';
 import type { PrivionConsentConfig } from '@privion-consent/astro';
+// Opt-in default styles. Skip the import to keep the components headless.
+import '@privion-consent/dom/styles.css';
 
 interface Props {
   title?: string;
@@ -83,65 +85,12 @@ const consentConfig: PrivionConsentConfig = {
       }
       body {
         margin: 0;
-        padding: 2rem;
+        padding: 2rem 2rem 8rem; /* leave room for the fixed banner */
         color: #111;
       }
       main {
         max-width: 720px;
         margin: 0 auto;
-      }
-
-      [privion-banner] {
-        position: fixed;
-        inset: auto 1rem 1rem 1rem;
-        max-width: 720px;
-        margin-inline: auto;
-        background: #1f2937;
-        color: white;
-        padding: 1rem 1.25rem;
-        border-radius: 0.75rem;
-        box-shadow: 0 10px 30px rgb(0 0 0 / 25%);
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.75rem;
-        align-items: center;
-      }
-      [privion-banner] p {
-        flex: 1 1 16rem;
-        margin: 0;
-      }
-      [privion-banner] button {
-        appearance: none;
-        border: 1px solid white;
-        background: transparent;
-        color: white;
-        padding: 0.5rem 1rem;
-        border-radius: 999px;
-        cursor: pointer;
-      }
-      [privion-banner] button[privion-accept-all] {
-        background: white;
-        color: #1f2937;
-      }
-
-      [privion-preferences] {
-        position: fixed;
-        inset: 50% 1rem auto 1rem;
-        transform: translateY(-50%);
-        max-width: 480px;
-        margin-inline: auto;
-        background: white;
-        color: #111;
-        padding: 1.5rem;
-        border-radius: 0.75rem;
-        box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
-      }
-      [privion-preferences] h2 {
-        margin-top: 0;
-      }
-      [privion-preferences] label {
-        display: block;
-        margin: 0.5rem 0;
       }
     </style>
   </body>

@@ -25,13 +25,14 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./styles.css": "./dist/styles.css"
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "vite build",
+    "build": "vite build && cp src/styles.css dist/",
     "dev": "vite build --watch",
     "type-check": "tsc --noEmit",
     "test": "vitest run",

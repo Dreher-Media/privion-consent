@@ -349,6 +349,9 @@ export type {
 
 // DOM bindings
 export { initPrivionDom } from '@privion-consent/dom';
+// Optional default styles (CSS, see §12). Skip the import to keep
+// the bundled banner / preferences components headless.
+import '@privion-consent/dom/styles.css';
 
 // React bindings
 export {
@@ -415,6 +418,34 @@ Reads the user's region from a configurable list of CDN headers (Cloudflare `cf-
 ### 11.4 React-in-Astro
 
 If your Astro project already has React island infrastructure (`@astrojs/react`), you can use `@privion-consent/react` directly with `client:only="react"` instead of `@privion-consent/astro`. Native `.astro` components are recommended by default because they ship no React runtime and SSR cleanly without hydration boundaries; reach for the React package only when you need the hooks (`useConsentCategory`, `useConsentI18n`) inside an existing React component tree.
+
+## 12. Default styles (opt-in)
+
+The bundled banner / preferences / toggles components are intentionally headless — they emit attribute hooks (`[privion-banner]`, `[data-privion-banner]`, `[privion-accept-all]`, …) and let the host app supply CSS. For projects that don't want to write their own, `@privion-consent/dom` ships an opt-in stylesheet:
+
+```ts
+import '@privion-consent/dom/styles.css';
+```
+
+The stylesheet targets both attribute styles (unprefixed `[privion-*]` used by the DOM adapter and Astro components, and `[data-privion-*]` used by the React components) so a single import covers any binding. Skip the import and components stay fully unstyled.
+
+All visual choices are exposed as CSS custom properties so consumers can override them without overriding the stylesheet itself:
+
+| Property                  | Default (light)                | Notes                                          |
+| ------------------------- | ------------------------------ | ---------------------------------------------- |
+| `--privion-bg`            | `#ffffff`                      | Banner / panel background                      |
+| `--privion-fg`            | `#111827`                      | Body text                                      |
+| `--privion-muted`         | `#6b7280`                      | Secondary text (descriptions, helper labels)   |
+| `--privion-border`        | `#e5e7eb`                      | Borders between toggle rows / panel edges      |
+| `--privion-accent`        | `#2563eb`                      | Primary buttons (Accept all, Save preferences) |
+| `--privion-accent-fg`     | `#ffffff`                      | Text on primary buttons                        |
+| `--privion-radius`        | `0.75rem`                      | Banner / panel corner radius                   |
+| `--privion-shadow`        | `0 10px 30px rgb(0 0 0 / 12%)` | Banner / panel drop shadow                     |
+| `--privion-z-banner`      | `1000`                         | Banner z-index                                 |
+| `--privion-z-preferences` | `1001`                         | Preferences modal z-index                      |
+| `--privion-backdrop`      | `rgb(15 23 42 / 50%)`          | Preferences modal backdrop                     |
+
+A dark variant kicks in automatically via `prefers-color-scheme: dark`. To force a theme regardless of OS preference, set `data-privion-theme="dark"` (or `"light"`) on the `<html>` element.
 
 ## 10. Out of scope for v1
 

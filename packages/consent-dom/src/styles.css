@@ -1,0 +1,237 @@
+/*
+ * Privion Consent — opt-in default styles.
+ *
+ * Import once from any binding (vanilla, React, Astro):
+ *
+ *   import '@privion-consent/dom/styles.css';
+ *
+ * Components remain headless if you don't import this file. The
+ * stylesheet targets both attribute styles used across the bindings:
+ * the unprefixed `[privion-banner]` etc. (DOM adapter, Astro
+ * components) and the `[data-privion-banner]` variant (React
+ * components). All visual choices are controlled via CSS custom
+ * properties so consumers can override them without overriding the
+ * stylesheet itself.
+ *
+ * Theming:
+ *
+ * - The default tokens honor `prefers-color-scheme` automatically.
+ * - To force a theme, set `data-privion-theme="light"` or
+ *   `data-privion-theme="dark"` on the <html> element.
+ * - To override individual properties, redefine them on `:root`
+ *   (or any narrower scope) — for example:
+ *       :root { --privion-accent: #7c3aed; }
+ */
+
+/* ---------- design tokens ---------- */
+
+:root {
+  --privion-bg: #ffffff;
+  --privion-fg: #111827;
+  --privion-muted: #6b7280;
+  --privion-border: #e5e7eb;
+  --privion-accent: #2563eb;
+  --privion-accent-fg: #ffffff;
+  --privion-radius: 0.75rem;
+  --privion-shadow: 0 10px 30px rgb(0 0 0 / 12%);
+  --privion-z-banner: 1000;
+  --privion-z-preferences: 1001;
+  --privion-backdrop: rgb(15 23 42 / 50%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-privion-theme='light']) {
+    --privion-bg: #1f2937;
+    --privion-fg: #f9fafb;
+    --privion-muted: #9ca3af;
+    --privion-border: #374151;
+    --privion-accent: #60a5fa;
+    --privion-accent-fg: #0b1220;
+    --privion-shadow: 0 10px 30px rgb(0 0 0 / 35%);
+    --privion-backdrop: rgb(0 0 0 / 60%);
+  }
+}
+
+[data-privion-theme='dark'] {
+  --privion-bg: #1f2937;
+  --privion-fg: #f9fafb;
+  --privion-muted: #9ca3af;
+  --privion-border: #374151;
+  --privion-accent: #60a5fa;
+  --privion-accent-fg: #0b1220;
+  --privion-shadow: 0 10px 30px rgb(0 0 0 / 35%);
+  --privion-backdrop: rgb(0 0 0 / 60%);
+}
+
+/* ---------- banner ---------- */
+
+[privion-banner],
+[data-privion-banner] {
+  position: fixed;
+  inset: auto 1rem 1rem 1rem;
+  max-width: 720px;
+  margin-inline: auto;
+  z-index: var(--privion-z-banner);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  background: var(--privion-bg);
+  color: var(--privion-fg);
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--privion-border);
+  border-radius: var(--privion-radius);
+  box-shadow: var(--privion-shadow);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+[privion-banner][hidden],
+[data-privion-banner][hidden] {
+  display: none;
+}
+
+[privion-banner] p,
+[data-privion-banner] p {
+  flex: 1 1 16rem;
+  margin: 0;
+}
+
+/* ---------- preferences modal ---------- */
+
+[privion-preferences],
+[data-privion-preferences] {
+  position: fixed;
+  inset: 0;
+  z-index: var(--privion-z-preferences);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--privion-backdrop);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+  color: var(--privion-fg);
+}
+
+[privion-preferences][hidden],
+[data-privion-preferences][hidden] {
+  display: none;
+}
+
+[privion-preferences] > *:first-child,
+[data-privion-preferences] > *:first-child,
+[privion-preferences] > h2,
+[data-privion-preferences] > h2 {
+  margin-top: 0;
+}
+
+/* The actual modal panel inside the backdrop. We can't enforce a
+   wrapper element so the children are styled directly: limit width
+   and apply the panel surface treatment. */
+[privion-preferences] > *,
+[data-privion-preferences] > * {
+  background: var(--privion-bg);
+  color: var(--privion-fg);
+  border: 1px solid var(--privion-border);
+  border-radius: var(--privion-radius);
+  box-shadow: var(--privion-shadow);
+  padding: 1.5rem;
+  max-width: 480px;
+  width: 100%;
+}
+
+/* If the host structures the modal as a single panel wrapper, the
+   above selector treats every child as a panel which looks wrong.
+   Override: when there's exactly one child container, treat that
+   one as the panel and don't double-style its descendants. */
+[privion-preferences] > *:not(:only-child) ~ *,
+[data-privion-preferences] > *:not(:only-child) ~ * {
+  box-shadow: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+/* ---------- toggles ---------- */
+
+[privion-banner] label,
+[data-privion-banner] label,
+[privion-preferences] label,
+[data-privion-preferences] label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--privion-border);
+}
+
+[privion-banner] label:last-child,
+[data-privion-banner] label:last-child,
+[privion-preferences] label:last-child,
+[data-privion-preferences] label:last-child {
+  border-bottom: 0;
+}
+
+[privion-banner] label > span,
+[data-privion-banner] label > span,
+[privion-preferences] label > span,
+[data-privion-preferences] label > span {
+  color: var(--privion-muted);
+  font-size: 0.8125rem;
+}
+
+/* ---------- buttons ---------- */
+
+[privion-banner] button,
+[data-privion-banner] button,
+[privion-preferences] button,
+[data-privion-preferences] button {
+  appearance: none;
+  border: 1px solid var(--privion-border);
+  background: transparent;
+  color: inherit;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+[privion-banner] button:hover,
+[data-privion-banner] button:hover,
+[privion-preferences] button:hover,
+[data-privion-preferences] button:hover {
+  background: color-mix(in oklab, var(--privion-fg) 6%, transparent);
+}
+
+/* Primary action — Accept all / Save preferences. */
+[privion-accept-all],
+[data-privion-accept-all],
+[privion-save-preferences],
+[data-privion-save-preferences] {
+  background: var(--privion-accent) !important;
+  color: var(--privion-accent-fg) !important;
+  border-color: var(--privion-accent) !important;
+}
+
+[privion-accept-all]:hover,
+[data-privion-accept-all]:hover,
+[privion-save-preferences]:hover,
+[data-privion-save-preferences]:hover {
+  background: color-mix(in oklab, var(--privion-accent) 88%, black) !important;
+  border-color: color-mix(in oklab, var(--privion-accent) 88%, black) !important;
+}
