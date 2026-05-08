@@ -87,7 +87,7 @@ describe('PrivionConsent <> Google Consent Mode integration', () => {
   it('emits a "default" event in advanced mode for a new visitor on init', () => {
     createPrivionConsent({ ...baseConfig, googleConsentMode: { mode: 'advanced' } });
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0].event).toBe('consent_default');
+    expect(dataLayer[0]!.event).toBe('consent_default');
   });
 
   it('emits "update" on init for a returning (decided) visitor — both modes', () => {
@@ -110,8 +110,8 @@ describe('PrivionConsent <> Google Consent Mode integration', () => {
     });
 
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0].event).toBe('consent_update');
-    expect(dataLayer[0].analytics_storage).toBe('granted');
+    expect(dataLayer[0]!.event).toBe('consent_update');
+    expect(dataLayer[0]!.analytics_storage).toBe('granted');
   });
 
   it('emits "update" after acceptAll in basic mode', () => {
@@ -124,8 +124,8 @@ describe('PrivionConsent <> Google Consent Mode integration', () => {
     consent.acceptAll();
 
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0].event).toBe('consent_update');
-    expect(dataLayer[0].analytics_storage).toBe('granted');
-    expect(dataLayer[0].ad_storage).toBe('granted');
+    expect(dataLayer[0]!.event).toBe('consent_update');
+    expect(dataLayer[0]!.analytics_storage).toBe('granted');
+    expect(dataLayer[0]!.ad_storage).toBe('granted');
   });
 });

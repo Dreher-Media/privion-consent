@@ -33,9 +33,9 @@ describe('config.migrations', () => {
         ...old,
         version: 2,
         categories: {
-          necessary: old.categories.necessary,
+          necessary: old.categories.necessary ?? 'granted',
           // analytics renamed to stats
-          stats: old.categories.analytics,
+          stats: old.categories.analytics ?? 'denied',
           ads: 'denied',
         },
       }),
@@ -67,7 +67,10 @@ describe('config.migrations', () => {
       migrate: (old) => ({
         ...old,
         version: 2,
-        categories: { necessary: old.categories.necessary, stats: old.categories.analytics },
+        categories: {
+          necessary: old.categories.necessary ?? 'granted',
+          stats: old.categories.analytics ?? 'denied',
+        },
       }),
     };
     const twoToThree: ConsentMigration = {

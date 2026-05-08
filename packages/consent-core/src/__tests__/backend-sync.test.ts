@@ -40,7 +40,8 @@ describe('Backend sync', () => {
     await flushPromises();
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [url, init] = call;
     expect(url).toBe('https://api.example/consent');
     expect(init.method).toBe('POST');
     expect(JSON.parse(init.body)).toMatchObject({
@@ -69,7 +70,7 @@ describe('Backend sync', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(onSyncError).toHaveBeenCalledTimes(1);
-    expect(onSyncError.mock.calls[0][0]).toMatchObject({
+    expect(onSyncError.mock.calls[0]![0]).toMatchObject({
       cause: 'http',
       status: 400,
       attempt: 1,
@@ -96,7 +97,7 @@ describe('Backend sync', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(3); // initial + 2 retries
     expect(onSyncError).toHaveBeenCalledTimes(3);
     expect(onSyncError.mock.calls.map((c) => c[0].attempt)).toEqual([1, 2, 3]);
-    expect(onSyncError.mock.calls[0][0].cause).toBe('http');
+    expect(onSyncError.mock.calls[0]![0].cause).toBe('http');
   });
 
   it('retries network failures', async () => {
@@ -122,7 +123,7 @@ describe('Backend sync', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2); // first fails, second succeeds
     expect(onSyncError).toHaveBeenCalledTimes(1);
-    expect(onSyncError.mock.calls[0][0]).toMatchObject({
+    expect(onSyncError.mock.calls[0]![0]).toMatchObject({
       cause: 'network',
       attempt: 1,
     });
@@ -145,7 +146,7 @@ describe('Backend sync', () => {
     await flushPromises();
 
     expect(transform).toHaveBeenCalledTimes(1);
-    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    const init = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1];
     expect(JSON.parse(init.body)).toEqual({
       wrapped: { state: expect.objectContaining({ source: 'banner', userDecided: true }) },
     });
