@@ -178,7 +178,33 @@ The engine tries gtag first (`window.gtag('consent', command, mapping)`), falls 
 
 ## 6. Region & defaults
 
-`config.defaultRegionMode` (`'opt-in' | 'opt-out'`) is reserved for Phase 2 of the v1.0 roadmap. In v0.x the field is accepted but inert; the engine builds initial state from per-category `defaultStatus`. Phase 2 will add `regionRules` and a `RegionResolver` so the host app can plug in geolocation (Cloudflare `cf-ipcountry`, GeoIP service, browser locale, …) and have `unknown` defaults selected automatically per region.
+The library does **not** ship a built-in geo database. Host apps resolve the user's region (typically from `cf-ipcountry`, a GeoIP service, or browser locale) and pass it via `config.region` (an ISO 3166-1 alpha-2 code).
+
+```ts
+type RegionMode = 'opt-in' | 'opt-out';
+
+interface PrivionConsentConfig {
+  region?: string; // 'DE', 'US', …
+  regionRules?: Record<string, { mode: RegionMode }>;
+  defaultRegionMode?: RegionMode;
+  // …
+}
+```
+
+Resolution order for the effective mode:
+
+1. `regionRules[region]` (case-insensitive on the key).
+2. `defaultRegionMode`.
+3. `undefined` — falls through to legacy behavior (categories without `defaultStatus` start as `'unknown'`).
+
+For categories without an explicit `defaultStatus`, the resolved mode picks the fallback:
+
+- `opt-in` → `'unknown'` (banner is shown until the user decides — GDPR / ePrivacy / TTDSG default).
+- `opt-out` → `'granted'` (consent assumed).
+
+A per-category `defaultStatus` always wins over the regional fallback, so hosts can pin specific categories regardless of region.
+
+The exported helper `resolveRegionMode(config)` returns the effective mode without instantiating an engine — useful for SSR rendering or pre-resolving the mode in middleware.
 
 ## 7. Storage
 
@@ -213,9 +239,30 @@ The interface is synchronous in v1 because the engine constructor needs the pers
 Stored state is keyed by `config.version`. On engine construction:
 
 1. If stored state's `version` matches and all stored category ids exist in the current config, the state is hydrated (with a one-time migration to fill in `userDecided` from the legacy `source` field if missing).
-2. Otherwise, defaults from `config.categories[*].defaultStatus` apply and `userDecided: false`.
+2. If stored state's `version` is **lower** than `config.version` and `config.migrations` is provided, the engine walks the chain forward (see §7.4).
+3. Otherwise, defaults from `config.categories[*].defaultStatus` apply and `userDecided: false`.
 
-Phase 2 will add `config.migrations` for preserving consent across category renames.
+### 7.4 Schema migrations
+
+```ts
+interface ConsentMigration {
+  from: number;
+  to: number;
+  migrate(old: ConsentState): ConsentState;
+}
+
+interface PrivionConsentConfig {
+  migrations?: ConsentMigration[];
+  // …
+}
+```
+
+Walks forward from the stored version step-by-step. Each step:
+
+- The matching `from` step receives the previous state and returns the migrated state. The returned `version` MUST equal `to`; otherwise the engine treats the migration as failed and falls back to defaults.
+- A missing step (gap in the chain), an exception thrown from `migrate`, or category ids in the result that the current config doesn't declare all cause a fall-back to defaults — the user is re-prompted rather than silently inheriting a broken state.
+
+The walker caps at 100 steps so a malformed chain (circular pair, bad data) cannot wedge the engine.
 
 ## 8. Backend sync
 
@@ -269,7 +316,7 @@ What you can import and rely on (everything else is internal):
 
 ```ts
 // Engine
-export { PrivionConsent, createPrivionConsent } from '@privion-consent/core';
+export { PrivionConsent, createPrivionConsent, resolveRegionMode } from '@privion-consent/core';
 
 // Storage
 export {
@@ -291,11 +338,13 @@ export type {
   ConsentState,
   ConsentEvent,
   ConsentCategoryConfig,
+  ConsentMigration,
   GoogleConsentMapping,
   StorageConfig,
   BackendSyncConfig,
   BackendSyncError,
   PrivionConsentConfig,
+  RegionMode,
 } from '@privion-consent/core';
 
 // DOM bindings
@@ -307,7 +356,15 @@ export {
   ConsentBanner,
   ConsentPreferences,
   useConsent,
+  useConsentI18n,
   useConsentCategory,
+  // i18n
+  enLocale,
+  deLocale,
+  frLocale,
+  esLocale,
+  mergeI18n,
+  type ConsentI18n,
 } from '@privion-consent/react';
 ```
 
@@ -315,9 +372,8 @@ export {
 
 The following are intentionally **not** part of v1.0 and are tracked for later phases:
 
-- Built-in geolocation. Host apps plug in a region resolver.
+- Built-in geolocation. Host apps plug in a region resolver and pass `config.region`.
 - IAB TCF (Transparent Consent Framework) integration.
-- Multi-language UI strings out of the box (Phase 2 adds an i18n layer for the React components).
 - Server-side consent log storage with audit trails (the host app's backend handles this).
 - Cross-domain consent sync (single-origin only in v1).
-- Automatic re-prompting after `version` bumps (Phase 2 adds migrations).
+- Async-first storage adapters with deferred load (the engine constructor consumes storage synchronously).
