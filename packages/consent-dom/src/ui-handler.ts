@@ -154,31 +154,19 @@ export class UIHandler {
   }
 
   /**
-   * Update banner visibility based on consent state
+   * Update banner visibility based on consent state.
+   *
+   * Driven solely by `userDecided`: the banner stays open until the user
+   * explicitly accepts/rejects via the banner or saves preferences. This
+   * is robust against programmatic `setCategory()` calls (which leave
+   * `userDecided` false) so a host app pre-seeding categories from code
+   * doesn't accidentally dismiss the banner.
    */
   private updateBannerVisibility(): void {
     if (!this.banner) {
       return;
     }
-
-    const state = this.consent.getState();
-    const config = this.consent.getConfig();
-
-    // Only check optional categories (required categories are always granted)
-    const optionalCategories = config.categories.filter((cat) => !cat.required);
-
-    // Check if user has made an explicit decision
-    // A decision is made if:
-    // 1. State source indicates user action (banner, preferences) - this means user interacted
-    // 2. OR there's stored consent that differs from defaults (user made a choice before)
-    //
-    // Important: If source is 'api', it means this is initial/default state, so show banner
-    // If source is 'banner' or 'preferences', user already made a choice, so hide banner
-    const hasUserDecision = state.source === 'banner' || state.source === 'preferences';
-
-    // Show banner if no user decision has been made
-    // The banner should show on first visit (source: 'api') regardless of defaultStatus
-    this.banner.hidden = hasUserDecision;
+    this.banner.hidden = this.consent.getState().userDecided;
   }
 
   /**
@@ -212,7 +200,6 @@ export class UIHandler {
    * Save preferences from toggles
    */
   private savePreferences(): void {
-    const state = this.consent.getState();
     const updates: Record<string, 'granted' | 'denied'> = {};
 
     // Read all toggles
@@ -224,12 +211,8 @@ export class UIHandler {
       }
     }
 
-    // Apply updates
     if (Object.keys(updates).length > 0) {
-      this.consent.setMany(updates);
-      // Mark source as preferences
-      const newState = this.consent.getState();
-      (newState as any).source = 'preferences';
+      this.consent.setMany(updates, 'preferences');
     }
   }
 }

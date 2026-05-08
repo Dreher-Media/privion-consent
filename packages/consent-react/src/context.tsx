@@ -47,6 +47,7 @@ export function ConsentProvider({
       updatedAt: new Date().toISOString(),
       version: config.version,
       source: 'api',
+      userDecided: false,
     };
   });
 

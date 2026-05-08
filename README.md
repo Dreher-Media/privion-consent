@@ -84,4 +84,4 @@ function App() {
 }
 ```
 
-For more examples, see the specification document.
+For the full data model, attribute schema, event lifecycle, Google Consent Mode mapping, and storage / backend-sync semantics, see [SPECIFICATION.md](./SPECIFICATION.md).

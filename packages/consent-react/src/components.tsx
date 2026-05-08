@@ -1,25 +1,21 @@
 import React, { useState } from 'react';
 import { useConsent } from './context.js';
 import { useConsentCategory } from './hooks.js';
-import type { ConsentStatus, ConsentCategoryConfig } from '@privion-consent/core';
+import type { ConsentCategoryConfig } from '@privion-consent/core';
 
 /**
- * ConsentBanner - Headless banner component
+ * ConsentBanner - Headless banner component.
+ *
+ * Visible until the user explicitly accepts/rejects via the banner or
+ * saves preferences. Programmatic `setCategory()` calls do not dismiss
+ * it (they leave `userDecided` false), so host apps can pre-seed
+ * categories without hiding the banner before the real interaction.
  */
 export function ConsentBanner(): JSX.Element | null {
   const { consent, state } = useConsent();
   const [showPreferences, setShowPreferences] = useState(false);
 
-  // Check if banner should be shown (no decision made for optional categories)
-  const config = consent.getConfig();
-  const optionalCategories = config.categories.filter(
-    (cat: ConsentCategoryConfig) => !cat.required,
-  );
-  const hasDecision = optionalCategories.some(
-    (cat: ConsentCategoryConfig) => state.categories[cat.id] !== 'unknown',
-  );
-
-  if (hasDecision) {
+  if (state.userDecided) {
     return null;
   }
 
@@ -118,7 +114,7 @@ function CategoryToggle({ category }: CategoryToggleProps): JSX.Element {
         type="checkbox"
         checked={status === 'granted'}
         onChange={(e) => {
-          set(e.target.checked ? 'granted' : 'denied');
+          set(e.target.checked ? 'granted' : 'denied', 'preferences');
         }}
         data-privion-toggle={category.id}
       />
