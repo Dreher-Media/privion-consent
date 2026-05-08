@@ -2,7 +2,10 @@ import type { ConsentState, GoogleConsentMapping, PrivionConsentConfig } from '.
 
 declare global {
   interface Window {
-    gtag?: (command: string, action: string, params: Record<string, unknown>) => void;
+    // gtag accepts arbitrary shapes — declare it as a permissive callable
+    // to match the real-world signature without forcing every caller to
+    // satisfy a narrow type.
+    gtag?: (...args: unknown[]) => void;
     dataLayer?: Array<Record<string, unknown>>;
   }
 }
