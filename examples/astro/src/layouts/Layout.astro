@@ -1,0 +1,148 @@
+---
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
+import { resolveRegion } from '@privion-consent/astro/server';
+import type { PrivionConsentConfig } from '@privion-consent/astro';
+
+interface Props {
+  title?: string;
+}
+
+const { title = 'Privion Consent example' } = Astro.props;
+
+// Resolve the user's region from CDN headers (cf-ipcountry, vercel,
+// netlify, …). Falls back to undefined for local dev where no CDN is
+// in front of the request.
+const region = resolveRegion(Astro.request.headers);
+
+const consentConfig: PrivionConsentConfig = {
+  version: 1,
+  region,
+  // EU/UK/CH must opt in (GDPR/ePrivacy/TTDSG); everywhere else
+  // defaults to opt-out for this demo. Real apps should curate this
+  // list with legal review.
+  regionRules: {
+    DE: { mode: 'opt-in' },
+    AT: { mode: 'opt-in' },
+    FR: { mode: 'opt-in' },
+    NL: { mode: 'opt-in' },
+    GB: { mode: 'opt-in' },
+    CH: { mode: 'opt-in' },
+  },
+  defaultRegionMode: 'opt-out',
+  categories: [
+    {
+      id: 'necessary',
+      label: 'Necessary',
+      required: true,
+      defaultStatus: 'granted',
+      description: 'Required for the site to function.',
+    },
+    {
+      id: 'analytics',
+      label: 'Analytics',
+      description: 'Helps us understand how visitors use the site.',
+    },
+    {
+      id: 'marketing',
+      label: 'Marketing',
+      description: 'Personalized ads and remarketing.',
+    },
+  ],
+  storage: { type: 'localStorage' },
+  googleConsentMode: { mode: 'advanced' },
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <title>{title}</title>
+    <meta name="description" content="Privion Consent — Astro example" />
+    <PrivionScript config={consentConfig} />
+  </head>
+  <body>
+    <main>
+      <slot />
+    </main>
+
+    <ConsentBanner />
+    <ConsentPreferences categories={consentConfig.categories} />
+
+    <style is:global>
+      :root {
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        margin: 0;
+        padding: 2rem;
+        color: #111;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+      }
+
+      [privion-banner] {
+        position: fixed;
+        inset: auto 1rem 1rem 1rem;
+        max-width: 720px;
+        margin-inline: auto;
+        background: #1f2937;
+        color: white;
+        padding: 1rem 1.25rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 30px rgb(0 0 0 / 25%);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+      }
+      [privion-banner] p {
+        flex: 1 1 16rem;
+        margin: 0;
+      }
+      [privion-banner] button {
+        appearance: none;
+        border: 1px solid white;
+        background: transparent;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      [privion-banner] button[privion-accept-all] {
+        background: white;
+        color: #1f2937;
+      }
+
+      [privion-preferences] {
+        position: fixed;
+        inset: 50% 1rem auto 1rem;
+        transform: translateY(-50%);
+        max-width: 480px;
+        margin-inline: auto;
+        background: white;
+        color: #111;
+        padding: 1.5rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 20px 60px rgb(0 0 0 / 25%);
+      }
+      [privion-preferences] h2 {
+        margin-top: 0;
+      }
+      [privion-preferences] label {
+        display: block;
+        margin: 0.5rem 0;
+      }
+    </style>
+  </body>
+</html>
