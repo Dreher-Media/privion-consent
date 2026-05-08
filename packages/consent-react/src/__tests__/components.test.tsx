@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ConsentProvider, ConsentBanner, ConsentPreferences } from '../index.js';
-import type { PrivionConsentConfig, ConsentStatus } from '@privion-consent/core';
+import type { PrivionConsentConfig } from '@privion-consent/core';
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 const config: PrivionConsentConfig = {
   version: 1,
@@ -43,25 +47,47 @@ describe('ConsentBanner', () => {
     expect(screen.getByText('Customize')).toBeInTheDocument();
   });
 
-  it('should not render when decision has been made', () => {
-    const consentConfig: PrivionConsentConfig = {
-      ...config,
-      categories: config.categories.map((cat) => {
-        const status: ConsentStatus = 'granted';
-        return {
-          ...cat,
-          defaultStatus: status,
-        };
+  it('should not render when the user has decided (state.userDecided=true)', () => {
+    // Seed localStorage with a previously-decided state so the engine
+    // hydrates with userDecided=true and skips the banner entirely.
+    localStorage.setItem(
+      'privion-consent',
+      JSON.stringify({
+        categories: { necessary: 'granted', analytics: 'granted', marketing: 'denied' },
+        updatedAt: new Date().toISOString(),
+        version: 1,
+        source: 'banner',
+        userDecided: true,
       }),
-    };
+    );
 
     render(
-      <ConsentProvider config={consentConfig}>
+      <ConsentProvider config={{ ...config, storage: { type: 'localStorage' } }}>
         <ConsentBanner />
       </ConsentProvider>,
     );
 
     expect(screen.queryByText(/We use cookies/i)).not.toBeInTheDocument();
+  });
+
+  it('should still render even if all defaultStatus values are granted (no real decision yet)', () => {
+    // Default-granted is NOT a user decision. The banner must stay visible
+    // so the user has a chance to actively confirm or change their mind.
+    const allGranted: PrivionConsentConfig = {
+      ...config,
+      categories: config.categories.map((cat) => ({
+        ...cat,
+        defaultStatus: 'granted',
+      })),
+    };
+
+    render(
+      <ConsentProvider config={allGranted}>
+        <ConsentBanner />
+      </ConsentProvider>,
+    );
+
+    expect(screen.getByText(/We use cookies/i)).toBeInTheDocument();
   });
 
   it('should call acceptAll when accept button is clicked', async () => {
