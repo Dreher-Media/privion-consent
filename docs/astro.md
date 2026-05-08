@@ -60,6 +60,18 @@ const consentConfig: PrivionConsentConfig = {
 
 That's the whole setup. The banner shows on first visit (or for returning visitors who never decided), the preferences modal opens when the user clicks Customize, and the engine state survives reloads via `localStorage`.
 
+### Default styles (optional)
+
+The components are headless by default. For a working baseline that you can theme via CSS custom properties, import the bundled stylesheet anywhere in your CSS chain (typically the layout):
+
+```astro
+---
+import '@privion-consent/dom/styles.css';
+---
+```
+
+See [SPECIFICATION.md §12](../SPECIFICATION.md#12-default-styles-opt-in) for the list of theme tokens and dark-mode behavior. Skip the import to keep the components fully unstyled and provide your own CSS.
+
 ## Region resolution
 
 `resolveRegion(Astro.request.headers)` reads the country code from CDN headers in this order:
