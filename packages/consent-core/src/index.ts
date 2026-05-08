@@ -8,6 +8,7 @@ export type {
   GoogleConsentMapping,
   StorageConfig,
   BackendSyncConfig,
+  BackendSyncError,
   PrivionConsentConfig,
 } from './types.js';
 

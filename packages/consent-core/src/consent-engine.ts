@@ -310,41 +310,95 @@ export class PrivionConsent {
   }
 
   /**
-   * Sync consent to backend (if configured)
+   * POST/PUT the consent state to the configured backend endpoint with
+   * retries on transient failures.
+   *
+   * Retry policy:
+   *   - Network failures (fetch throws): retry with exponential backoff.
+   *   - HTTP 5xx: retry with exponential backoff.
+   *   - HTTP 4xx: treat as permanent (don't retry), still call `onSyncError`.
+   *   - HTTP 2xx: success.
+   *
+   * Each attempt's failure (whether final or not) calls `onSyncError`
+   * if provided so the host app can log/observe.
    */
   private async syncToBackend(): Promise<void> {
-    if (!this.config.backendSync) {
+    const cfg = this.config.backendSync;
+    if (!cfg) {
       return;
+    }
+
+    const totalAttempts = (cfg.retries ?? 3) + 1;
+    const baseDelay = cfg.retryBaseDelayMs ?? 200;
+    const payload = this.buildBackendSyncPayload(cfg);
+    const url = cfg.endpoint;
+    const method = cfg.method ?? 'POST';
+    const headers = { 'Content-Type': 'application/json', ...cfg.headers };
+    const body = JSON.stringify(payload);
+
+    for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+      try {
+        const response = await fetch(url, { method, headers, body });
+        if (response.ok) {
+          return;
+        }
+        const transient = response.status >= 500 && response.status < 600;
+        cfg.onSyncError?.({
+          endpoint: url,
+          attempt,
+          totalAttempts,
+          cause: 'http',
+          status: response.status,
+          statusText: response.statusText,
+        });
+        if (!transient) {
+          return; // 4xx — give up immediately
+        }
+      } catch (error) {
+        cfg.onSyncError?.({
+          endpoint: url,
+          attempt,
+          totalAttempts,
+          cause: 'network',
+          error,
+        });
+      }
+
+      if (attempt < totalAttempts) {
+        await sleep(baseDelay * 2 ** (attempt - 1));
+      }
+    }
+  }
+
+  /**
+   * Build the request body for `syncToBackend`, applying
+   * `payloadTransform` if provided and otherwise using the default
+   * shape (`{ categories, version, updatedAt, userDecided, source,
+   * userAgent? }`).
+   */
+  private buildBackendSyncPayload(cfg: NonNullable<PrivionConsentConfig['backendSync']>): unknown {
+    if (cfg.payloadTransform) {
+      return cfg.payloadTransform(this.state);
     }
 
     const payload: Record<string, unknown> = {
       categories: this.state.categories,
       version: this.state.version,
       updatedAt: this.state.updatedAt,
+      source: this.state.source,
+      userDecided: this.state.userDecided,
     };
 
-    // Add optional fields
-    if (this.config.backendSync.includeUserAgent && typeof navigator !== 'undefined') {
+    if (cfg.includeUserAgent && typeof navigator !== 'undefined') {
       payload.userAgent = navigator.userAgent;
     }
 
-    try {
-      const response = await fetch(this.config.backendSync.endpoint, {
-        method: this.config.backendSync.method || 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...this.config.backendSync.headers,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        console.warn('Failed to sync consent to backend:', response.statusText);
-      }
-    } catch (error) {
-      console.warn('Error syncing consent to backend:', error);
-    }
+    return payload;
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

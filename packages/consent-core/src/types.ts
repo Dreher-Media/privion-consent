@@ -41,7 +41,12 @@ export interface StorageConfig {
 }
 
 /**
- * Backend sync configuration (optional)
+ * Backend sync configuration (optional).
+ *
+ * When set, the engine POSTs the consent state to `endpoint` after
+ * every state change. Failures are retried with exponential backoff
+ * for transient errors (network, 5xx); 4xx responses are treated as
+ * permanent and reported via `onSyncError` without retrying.
  */
 export interface BackendSyncConfig {
   endpoint: string;
@@ -49,6 +54,41 @@ export interface BackendSyncConfig {
   headers?: Record<string, string>;
   includeIp?: boolean;
   includeUserAgent?: boolean;
+  /**
+   * Maximum number of retry attempts for transient failures.
+   * Defaults to `3` (so up to 4 total attempts: 1 initial + 3 retries).
+   * Set to `0` to disable retries.
+   */
+  retries?: number;
+  /**
+   * Base delay in milliseconds before the first retry. Doubles each
+   * subsequent attempt (200, 400, 800, …). Defaults to `200`.
+   */
+  retryBaseDelayMs?: number;
+  /**
+   * Reshape the consent state into the request body before
+   * serialization. Useful when the backend expects a different
+   * envelope or additional fields.
+   */
+  payloadTransform?: (state: ConsentState) => unknown;
+  /**
+   * Called for every sync failure (including each retried attempt).
+   * Receives a structured error object describing what went wrong.
+   */
+  onSyncError?: (error: BackendSyncError) => void;
+}
+
+/**
+ * Structured failure reported via `BackendSyncConfig.onSyncError`.
+ */
+export interface BackendSyncError {
+  endpoint: string;
+  attempt: number;
+  totalAttempts: number;
+  cause: 'network' | 'http';
+  status?: number;
+  statusText?: string;
+  error?: unknown;
 }
 
 /**
