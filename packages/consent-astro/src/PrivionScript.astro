@@ -1,0 +1,43 @@
+---
+/**
+ * Boots the Privion Consent engine on the client.
+ *
+ * Drop this once into your layout's `<head>`. Pass the engine config
+ * — categories, version, region, region rules, GCM mode, etc. The
+ * config is serialized as JSON into a `<script type="application/json">`
+ * element, then a separate Astro-bundled `<script>` reads and boots
+ * it via `bootPrivion`.
+ *
+ * Why two scripts: callbacks like `onSyncError` / `payloadTransform` /
+ * custom storage adapters / region resolvers can't survive JSON
+ * serialization. Host apps that need them should subscribe to
+ * `window.__privionConsent` after this component mounts and call
+ * `consent.on('update', …)` etc. — the engine fires `ready` and any
+ * pending state change events synchronously on construction.
+ */
+import type { PrivionConsentConfig } from '@privion-consent/core';
+
+export interface Props {
+  /** The engine config (must be JSON-serializable). */
+  config: PrivionConsentConfig;
+  /** DOM id for the embedded JSON config block. Defaults to "privion-config". */
+  configId?: string;
+}
+
+const { config, configId = 'privion-config' } = Astro.props;
+const json = JSON.stringify(config);
+---
+
+<script id={configId} type="application/json" set:html={json}></script>
+<script>
+  import { bootPrivion, readSerializedConfig } from '@privion-consent/astro/boot';
+
+  // Re-read the inline config block (the one set:html'd above by the
+  // SSR step). Doing this at runtime — instead of inlining the config
+  // into this bundled script via define:vars — keeps callbacks /
+  // overrides accessible to the host app via window.__privionConsent.
+  const cfg = readSerializedConfig();
+  if (cfg) {
+    bootPrivion(cfg);
+  }
+</script>

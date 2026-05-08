@@ -1,0 +1,41 @@
+---
+/**
+ * Single category toggle row.
+ *
+ * Required categories render as a disabled, force-checked checkbox
+ * carrying `privion-required="<id>"`. Optional categories render as
+ * a checkbox carrying `privion-toggle="<id>"` so the DOM adapter
+ * picks them up and routes changes through `setMany(_, 'preferences')`
+ * when the user clicks Save.
+ *
+ * The `checked` attribute on optional toggles is set from
+ * `category.defaultStatus`; the DOM adapter overwrites it on `ready`
+ * with the actual stored state, so SSR doesn't have to know the
+ * runtime value.
+ */
+import type { ConsentCategoryConfig } from '@privion-consent/core';
+
+export interface Props {
+  category: ConsentCategoryConfig;
+  alwaysOnLabel?: string;
+}
+
+const { category, alwaysOnLabel = 'always on' } = Astro.props;
+const optionalChecked = category.defaultStatus === 'granted';
+---
+
+{
+  category.required ? (
+    <label>
+      <input type="checkbox" checked disabled privion-required={category.id} />
+      {category.label} ({alwaysOnLabel})
+      {category.description && <span> - {category.description}</span>}
+    </label>
+  ) : (
+    <label>
+      <input type="checkbox" checked={optionalChecked} privion-toggle={category.id} />
+      {category.label}
+      {category.description && <span> - {category.description}</span>}
+    </label>
+  )
+}

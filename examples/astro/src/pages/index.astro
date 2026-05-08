@@ -1,0 +1,38 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Privion Consent — Astro example">
+  <h1>Privion Consent · Astro example</h1>
+  <p>
+    This page demonstrates server-rendered consent UI with a region-aware default mode. The banner
+    appears until the user accepts, rejects, or saves preferences. Open DevTools to watch the
+    <code>privion:google-consent-mode</code> custom event fire when the state changes.
+  </p>
+
+  <h2>Tracked content</h2>
+  <p>
+    The block below is hidden until the <strong>analytics</strong> category is granted (the visibility
+    handler reacts to the <code>privion="analytics"</code> attribute):
+  </p>
+  <div privion="analytics" style="padding:1rem;background:#eef9ff;border-radius:.5rem">
+    👀 You consented to analytics — pretend this is a usage chart.
+  </div>
+
+  <p>This block shows when analytics is <strong>not</strong> granted:</p>
+  <div privion="!analytics" style="padding:1rem;background:#fff4e0;border-radius:.5rem">
+    🙅 Analytics is off — fallback content goes here.
+  </div>
+
+  <h2>Reset</h2>
+  <p>
+    <button id="reset-consent" type="button">Reset stored consent</button>
+  </p>
+
+  <script>
+    document.getElementById('reset-consent')?.addEventListener('click', () => {
+      window.__privionConsent?.reset();
+      window.location.reload();
+    });
+  </script>
+</Layout>
