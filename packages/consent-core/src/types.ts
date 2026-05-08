@@ -128,7 +128,6 @@ export interface PrivionConsentConfig {
   /** Mode used when `region` doesn't match any `regionRules` entry. */
   defaultRegionMode?: RegionMode;
   storage?: StorageConfig | import('./storage.js').ConsentStorageAdapter;
-  i18n?: Record<string, Record<string, string>>;
   googleConsentMode?: {
     mode: 'basic' | 'advanced';
   };

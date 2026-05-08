@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useConsent } from './context.js';
 import { useConsentCategory } from './hooks.js';
 import type { ConsentCategoryConfig } from '@privion-consent/core';
+import type { ConsentI18n } from './i18n.js';
 
 /**
  * ConsentBanner - Headless banner component.
@@ -12,7 +13,7 @@ import type { ConsentCategoryConfig } from '@privion-consent/core';
  * categories without hiding the banner before the real interaction.
  */
 export function ConsentBanner(): JSX.Element | null {
-  const { consent, state } = useConsent();
+  const { consent, state, i18n } = useConsent();
   const [showPreferences, setShowPreferences] = useState(false);
 
   if (state.userDecided) {
@@ -21,14 +22,15 @@ export function ConsentBanner(): JSX.Element | null {
 
   return (
     <div data-privion-banner>
-      <p>We use cookies and similar technologies to improve your experience.</p>
+      {i18n.bannerTitle && <h2>{i18n.bannerTitle}</h2>}
+      <p>{i18n.bannerBody}</p>
       <button
         onClick={() => {
           consent.rejectAll();
         }}
         data-privion-reject-all
       >
-        Reject all
+        {i18n.rejectAll}
       </button>
       <button
         onClick={() => {
@@ -36,7 +38,7 @@ export function ConsentBanner(): JSX.Element | null {
         }}
         data-privion-accept-all
       >
-        Accept all
+        {i18n.acceptAll}
       </button>
       <button
         onClick={() => {
@@ -44,7 +46,7 @@ export function ConsentBanner(): JSX.Element | null {
         }}
         data-privion-open-preferences
       >
-        Customize
+        {i18n.customize}
       </button>
       {showPreferences && (
         <ConsentPreferences
@@ -65,11 +67,10 @@ interface ConsentPreferencesProps {
  * ConsentPreferences - Headless preferences component
  */
 export function ConsentPreferences({ onClose }: ConsentPreferencesProps): JSX.Element {
-  const { consent } = useConsent();
+  const { consent, i18n } = useConsent();
   const config = consent.getConfig();
 
   const handleSave = () => {
-    // Preferences are saved automatically via useConsentCategory hooks
     if (onClose) {
       onClose();
     }
@@ -77,12 +78,12 @@ export function ConsentPreferences({ onClose }: ConsentPreferencesProps): JSX.El
 
   return (
     <div data-privion-preferences>
-      <h2>Privacy preferences</h2>
+      <h2>{i18n.preferencesTitle}</h2>
       {config.categories.map((category: ConsentCategoryConfig) => (
         <CategoryToggle key={category.id} category={category} />
       ))}
       <button onClick={handleSave} data-privion-save-preferences>
-        Save preferences
+        {i18n.save}
       </button>
     </div>
   );
@@ -97,13 +98,19 @@ interface CategoryToggleProps {
  */
 function CategoryToggle({ category }: CategoryToggleProps): JSX.Element {
   const { status, set } = useConsentCategory(category.id);
+  const { i18n } = useConsent();
+
+  // Per-category i18n override (label + description) wins over the
+  // engine-config text so hosts can localize without forking the engine.
+  const override = i18n.categories?.[category.id];
+  const label = override?.label ?? category.label;
+  const description = override?.description ?? category.description;
 
   if (category.required) {
     return (
       <label>
         <input type="checkbox" checked={true} disabled={true} data-privion-required={category.id} />
-        {category.label} (always on)
-        {category.description && <span> - {category.description}</span>}
+        {label} ({i18n.alwaysOn}){description && <span> - {description}</span>}
       </label>
     );
   }
@@ -118,8 +125,10 @@ function CategoryToggle({ category }: CategoryToggleProps): JSX.Element {
         }}
         data-privion-toggle={category.id}
       />
-      {category.label}
-      {category.description && <span> - {category.description}</span>}
+      {label}
+      {description && <span> - {description}</span>}
     </label>
   );
 }
+
+export type { ConsentI18n };
