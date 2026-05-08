@@ -4,6 +4,7 @@ export { useConsentCategory } from './hooks.js';
 
 // Components
 export { ConsentBanner, ConsentPreferences } from './components.js';
+export { ConsentErrorBoundary } from './ConsentErrorBoundary.js';
 
 // i18n
 export { enLocale, deLocale, frLocale, esLocale, mergeI18n, type ConsentI18n } from './i18n.js';
