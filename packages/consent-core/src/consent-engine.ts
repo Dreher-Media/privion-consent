@@ -469,9 +469,9 @@ export function resolveRegionMode(config: PrivionConsentConfig): RegionMode | un
   const { region, regionRules, defaultRegionMode } = config;
   if (region && regionRules) {
     const upper = region.toUpperCase();
-    for (const key of Object.keys(regionRules)) {
+    for (const [key, rule] of Object.entries(regionRules)) {
       if (key.toUpperCase() === upper) {
-        return regionRules[key].mode;
+        return rule.mode;
       }
     }
   }
