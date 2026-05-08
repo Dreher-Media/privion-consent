@@ -1,10 +1,12 @@
 import type {
   ConsentCategoryConfig,
   ConsentEvent,
+  ConsentMigration,
   ConsentSource,
   ConsentState,
   ConsentStatus,
   PrivionConsentConfig,
+  RegionMode,
 } from './types.js';
 import { resolveStorage, type ConsentStorageAdapter } from './storage.js';
 import { computeGoogleConsentMode, syncGoogleConsentMode } from './google-consent-mode.js';
@@ -45,32 +47,48 @@ export class PrivionConsent {
   private initializeState(): ConsentState {
     const stored = this.storage.load();
 
-    // Validate stored state
-    if (stored && stored.version === this.config.version) {
-      // Validate that all categories exist in config
-      const allCategoriesValid = Object.keys(stored.categories).every((id) =>
-        this.config.categories.some((cat) => cat.id === id),
-      );
+    if (stored) {
+      const target = this.config.version;
+      let candidate: ConsentState | null = null;
 
-      if (allCategoriesValid) {
+      if (stored.version === target) {
+        candidate = stored;
+      } else if (stored.version < target && this.config.migrations?.length) {
+        candidate = runMigrations(stored, this.config.migrations, target);
+      }
+
+      // Validate that all categories the candidate carries are still
+      // declared in the current config. If not, the host either added
+      // a migration to clean up or hadn't — either way the safe move
+      // is to fall back to defaults rather than carry orphaned ids.
+      if (
+        candidate &&
+        Object.keys(candidate.categories).every((id) =>
+          this.config.categories.some((cat) => cat.id === id),
+        )
+      ) {
         // Migrate state from older versions that didn't carry `userDecided`:
         // a stored state from `banner`/`preferences` implies the user had
         // already decided; `api` is treated as undecided.
         return {
-          ...stored,
-          userDecided: stored.userDecided ?? stored.source !== 'api',
+          ...candidate,
+          userDecided: candidate.userDecided ?? candidate.source !== 'api',
         };
       }
     }
 
     // Build initial state from config
+    const regionMode = resolveRegionMode(this.config);
+    const fallback: ConsentStatus = regionMode === 'opt-out' ? 'granted' : 'unknown';
     const categories: Record<string, ConsentStatus> = {};
 
     for (const category of this.config.categories) {
       if (category.required) {
         categories[category.id] = 'granted';
       } else {
-        categories[category.id] = category.defaultStatus || 'unknown';
+        // Per-category defaultStatus always wins over regional defaults so
+        // host apps can pin specific categories regardless of region.
+        categories[category.id] = category.defaultStatus ?? fallback;
       }
     }
 
@@ -399,6 +417,65 @@ export class PrivionConsent {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Walk the migration chain forward from `stored.version` to `target`.
+ * Returns `null` if any step is missing, the chain doesn't complete,
+ * or a step returns a state with the wrong version (signaling a buggy
+ * migration). Callers fall back to defaults on `null`.
+ */
+function runMigrations(
+  stored: ConsentState,
+  migrations: ConsentMigration[],
+  target: number,
+): ConsentState | null {
+  let state = stored;
+  // Cap the loop so a malformed chain (e.g. a circular pair) can't
+  // wedge the engine. The cap is generous; real configs ship a handful
+  // of migrations, not hundreds.
+  for (let step = 0; step < 100 && state.version < target; step++) {
+    const next = migrations.find((m) => m.from === state.version);
+    if (!next) {
+      return null;
+    }
+    let migrated: ConsentState;
+    try {
+      migrated = next.migrate(state);
+    } catch (e) {
+      console.warn(`Migration ${next.from}→${next.to} threw:`, e);
+      return null;
+    }
+    if (migrated.version !== next.to) {
+      console.warn(
+        `Migration ${next.from}→${next.to} returned version ${migrated.version}, expected ${next.to}`,
+      );
+      return null;
+    }
+    state = migrated;
+  }
+  return state.version === target ? state : null;
+}
+
+/**
+ * Resolve the effective region mode for a config:
+ *
+ * - `regionRules[region]` (case-insensitive) wins if present.
+ * - Otherwise `defaultRegionMode` is used.
+ * - Otherwise `undefined` — callers fall back to legacy behavior
+ *   (`'unknown'` defaults).
+ */
+export function resolveRegionMode(config: PrivionConsentConfig): RegionMode | undefined {
+  const { region, regionRules, defaultRegionMode } = config;
+  if (region && regionRules) {
+    const upper = region.toUpperCase();
+    for (const key of Object.keys(regionRules)) {
+      if (key.toUpperCase() === upper) {
+        return regionRules[key].mode;
+      }
+    }
+  }
+  return defaultRegionMode;
 }
 
 /**

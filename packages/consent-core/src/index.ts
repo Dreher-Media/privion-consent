@@ -9,11 +9,13 @@ export type {
   StorageConfig,
   BackendSyncConfig,
   BackendSyncError,
+  ConsentMigration,
   PrivionConsentConfig,
+  RegionMode,
 } from './types.js';
 
 // Core engine
-export { PrivionConsent, createPrivionConsent } from './consent-engine.js';
+export { PrivionConsent, createPrivionConsent, resolveRegionMode } from './consent-engine.js';
 
 // Storage
 export {
