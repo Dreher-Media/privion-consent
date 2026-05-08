@@ -1,7 +1,7 @@
 /**
  * Consent Status - Three possible states for a consent category
  */
-export type ConsentStatus = "granted" | "denied" | "unknown";
+export type ConsentStatus = 'granted' | 'denied' | 'unknown';
 
 /**
  * Google Consent Mode v2 mapping
@@ -30,13 +30,13 @@ export interface ConsentCategoryConfig {
  */
 export interface StorageConfig {
   key?: string;
-  type?: "cookie" | "localStorage";
+  type?: 'cookie' | 'localStorage';
   cookieOptions?: {
     path?: string;
     domain?: string;
     maxAgeDays?: number;
     secure?: boolean;
-    sameSite?: "Lax" | "Strict" | "None";
+    sameSite?: 'Lax' | 'Strict' | 'None';
   };
 }
 
@@ -45,7 +45,7 @@ export interface StorageConfig {
  */
 export interface BackendSyncConfig {
   endpoint: string;
-  method?: "POST" | "PUT";
+  method?: 'POST' | 'PUT';
   headers?: Record<string, string>;
   includeIp?: boolean;
   includeUserAgent?: boolean;
@@ -57,11 +57,11 @@ export interface BackendSyncConfig {
 export interface PrivionConsentConfig {
   version: number;
   categories: ConsentCategoryConfig[];
-  defaultRegionMode?: "opt-in" | "opt-out";
+  defaultRegionMode?: 'opt-in' | 'opt-out';
   storage?: StorageConfig;
   i18n?: Record<string, Record<string, string>>;
   googleConsentMode?: {
-    mode: "basic" | "advanced";
+    mode: 'basic' | 'advanced';
   };
   backendSync?: BackendSyncConfig;
 }
@@ -73,10 +73,10 @@ export interface ConsentState {
   categories: Record<string, ConsentStatus>;
   updatedAt: string; // ISO timestamp
   version: number;
-  source: "banner" | "preferences" | "api";
+  source: 'banner' | 'preferences' | 'api';
 }
 
 /**
  * Consent event types
  */
-export type ConsentEvent = "ready" | "update" | "accept_all" | "reject_all" | "reset";
+export type ConsentEvent = 'ready' | 'update' | 'accept_all' | 'reject_all' | 'reset';

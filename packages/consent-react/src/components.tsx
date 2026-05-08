@@ -1,24 +1,26 @@
-import React, { useState } from 'react'
-import { useConsent } from './context.js'
-import { useConsentCategory } from './hooks.js'
-import type { ConsentStatus, ConsentCategoryConfig } from '@privion-consent/core'
+import React, { useState } from 'react';
+import { useConsent } from './context.js';
+import { useConsentCategory } from './hooks.js';
+import type { ConsentStatus, ConsentCategoryConfig } from '@privion-consent/core';
 
 /**
  * ConsentBanner - Headless banner component
  */
 export function ConsentBanner(): JSX.Element | null {
-  const { consent, state } = useConsent()
-  const [showPreferences, setShowPreferences] = useState(false)
+  const { consent, state } = useConsent();
+  const [showPreferences, setShowPreferences] = useState(false);
 
   // Check if banner should be shown (no decision made for optional categories)
-  const config = consent.getConfig()
-  const optionalCategories = config.categories.filter((cat: ConsentCategoryConfig) => !cat.required)
+  const config = consent.getConfig();
+  const optionalCategories = config.categories.filter(
+    (cat: ConsentCategoryConfig) => !cat.required,
+  );
   const hasDecision = optionalCategories.some(
-    (cat: ConsentCategoryConfig) => state.categories[cat.id] !== 'unknown'
-  )
+    (cat: ConsentCategoryConfig) => state.categories[cat.id] !== 'unknown',
+  );
 
   if (hasDecision) {
-    return null
+    return null;
   }
 
   return (
@@ -26,7 +28,7 @@ export function ConsentBanner(): JSX.Element | null {
       <p>We use cookies and similar technologies to improve your experience.</p>
       <button
         onClick={() => {
-          consent.rejectAll()
+          consent.rejectAll();
         }}
         data-privion-reject-all
       >
@@ -34,7 +36,7 @@ export function ConsentBanner(): JSX.Element | null {
       </button>
       <button
         onClick={() => {
-          consent.acceptAll()
+          consent.acceptAll();
         }}
         data-privion-accept-all
       >
@@ -42,7 +44,7 @@ export function ConsentBanner(): JSX.Element | null {
       </button>
       <button
         onClick={() => {
-          setShowPreferences(true)
+          setShowPreferences(true);
         }}
         data-privion-open-preferences
       >
@@ -51,31 +53,31 @@ export function ConsentBanner(): JSX.Element | null {
       {showPreferences && (
         <ConsentPreferences
           onClose={() => {
-            setShowPreferences(false)
+            setShowPreferences(false);
           }}
         />
       )}
     </div>
-  )
+  );
 }
 
 interface ConsentPreferencesProps {
-  onClose?: () => void
+  onClose?: () => void;
 }
 
 /**
  * ConsentPreferences - Headless preferences component
  */
 export function ConsentPreferences({ onClose }: ConsentPreferencesProps): JSX.Element {
-  const { consent } = useConsent()
-  const config = consent.getConfig()
+  const { consent } = useConsent();
+  const config = consent.getConfig();
 
   const handleSave = () => {
     // Preferences are saved automatically via useConsentCategory hooks
     if (onClose) {
-      onClose()
+      onClose();
     }
-  }
+  };
 
   return (
     <div data-privion-preferences>
@@ -91,28 +93,23 @@ export function ConsentPreferences({ onClose }: ConsentPreferencesProps): JSX.El
 }
 
 interface CategoryToggleProps {
-  category: ConsentCategoryConfig
+  category: ConsentCategoryConfig;
 }
 
 /**
  * CategoryToggle - Individual category toggle
  */
 function CategoryToggle({ category }: CategoryToggleProps): JSX.Element {
-  const { status, set } = useConsentCategory(category.id)
+  const { status, set } = useConsentCategory(category.id);
 
   if (category.required) {
     return (
       <label>
-        <input
-          type="checkbox"
-          checked={true}
-          disabled={true}
-          data-privion-required={category.id}
-        />
+        <input type="checkbox" checked={true} disabled={true} data-privion-required={category.id} />
         {category.label} (always on)
         {category.description && <span> - {category.description}</span>}
       </label>
-    )
+    );
   }
 
   return (
@@ -121,12 +118,12 @@ function CategoryToggle({ category }: CategoryToggleProps): JSX.Element {
         type="checkbox"
         checked={status === 'granted'}
         onChange={(e) => {
-          set(e.target.checked ? 'granted' : 'denied')
+          set(e.target.checked ? 'granted' : 'denied');
         }}
         data-privion-toggle={category.id}
       />
       {category.label}
       {category.description && <span> - {category.description}</span>}
-      </label>
-  )
+    </label>
+  );
 }

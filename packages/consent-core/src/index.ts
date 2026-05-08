@@ -7,7 +7,7 @@ export type {
   GoogleConsentMapping,
   StorageConfig,
   BackendSyncConfig,
-  PrivionConsentConfig
+  PrivionConsentConfig,
 } from './types.js';
 
 // Core engine

@@ -3,7 +3,7 @@ import type {
   ConsentStatus,
   ConsentEvent,
   PrivionConsentConfig,
-  ConsentCategoryConfig
+  ConsentCategoryConfig,
 } from './types.js';
 import { ConsentStorage } from './storage.js';
 import { computeGoogleConsentMode, syncGoogleConsentMode } from './google-consent-mode.js';
@@ -48,7 +48,7 @@ export class PrivionConsent {
     if (stored && stored.version === this.config.version) {
       // Validate that all categories exist in config
       const allCategoriesValid = Object.keys(stored.categories).every((id) =>
-        this.config.categories.some((cat) => cat.id === id)
+        this.config.categories.some((cat) => cat.id === id),
       );
 
       if (allCategoriesValid) {
@@ -71,7 +71,7 @@ export class PrivionConsent {
       categories,
       updatedAt: new Date().toISOString(),
       version: this.config.version,
-      source: 'api'
+      source: 'api',
     };
   }
 
@@ -297,7 +297,7 @@ export class PrivionConsent {
     const payload: Record<string, any> = {
       categories: this.state.categories,
       version: this.state.version,
-      updatedAt: this.state.updatedAt
+      updatedAt: this.state.updatedAt,
     };
 
     // Add optional fields
@@ -310,9 +310,9 @@ export class PrivionConsent {
         method: this.config.backendSync.method || 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...this.config.backendSync.headers
+          ...this.config.backendSync.headers,
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {

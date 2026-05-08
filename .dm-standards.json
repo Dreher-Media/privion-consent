@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Dreher-Media/standards/main/.dm-standards.schema.json",
+  "version": "1",
+  "overlays": ["typescript-node", "public-package"],
+  "visibility": "public",
+  "ci": {
+    "requiredCheckName": "verify"
+  }
+}
