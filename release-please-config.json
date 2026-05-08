@@ -16,6 +16,10 @@
     "packages/consent-react": {
       "package-name": "@privion-consent/react",
       "component": "consent-react"
+    },
+    "packages/consent-astro": {
+      "package-name": "@privion-consent/astro",
+      "component": "consent-astro"
     }
   },
   "plugins": [{ "type": "node-workspace" }]
