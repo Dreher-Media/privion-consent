@@ -1,0 +1,40 @@
+---
+/**
+ * Headless consent banner, server-rendered with the `privion-banner`
+ * attribute that the DOM adapter recognizes. Hidden by default so the
+ * server-rendered markup never flashes a banner before the engine
+ * has a chance to check `state.userDecided`. The DOM adapter unhides
+ * it on `ready` if the user hasn't decided yet.
+ *
+ * Slot the body / buttons however you want — the only requirement is
+ * that the action buttons carry the matching `privion-*` attributes
+ * (provided as defaults below) so the DOM adapter wires them.
+ */
+
+export interface Props {
+  /**
+   * Body text shown above the buttons. Override via the default slot
+   * for richer markup (links, multiple paragraphs, …).
+   */
+  body?: string;
+  acceptLabel?: string;
+  rejectLabel?: string;
+  customizeLabel?: string;
+}
+
+const {
+  body = 'We use cookies and similar technologies to improve your experience.',
+  acceptLabel = 'Accept all',
+  rejectLabel = 'Reject all',
+  customizeLabel = 'Customize',
+} = Astro.props;
+---
+
+<div privion-banner hidden>
+  <slot>
+    <p>{body}</p>
+    <button privion-reject-all>{rejectLabel}</button>
+    <button privion-accept-all>{acceptLabel}</button>
+    <button privion-open-preferences>{customizeLabel}</button>
+  </slot>
+</div>

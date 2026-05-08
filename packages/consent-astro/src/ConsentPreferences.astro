@@ -1,0 +1,45 @@
+---
+/**
+ * Headless preferences modal, server-rendered with the
+ * `privion-preferences` attribute. Hidden by default; the DOM adapter
+ * un-hides it when a `[privion-open-preferences]` button is clicked.
+ *
+ * Slot the toggles inline if you want full control, or pass
+ * `categories` to render a default toggle per category. The save
+ * button must carry `privion-save-preferences` for the DOM adapter
+ * to wire the batched setMany call.
+ */
+import type { ConsentCategoryConfig } from '@privion-consent/core';
+import CategoryToggle from './CategoryToggle.astro';
+
+export interface Props {
+  title?: string;
+  saveLabel?: string;
+  /**
+   * If provided, renders a `<CategoryToggle>` per entry. Omit to
+   * supply your own toggles via the default slot.
+   */
+  categories?: ConsentCategoryConfig[];
+  /** Label appended to required categories (e.g. "(always on)"). */
+  alwaysOnLabel?: string;
+}
+
+const {
+  title = 'Privacy preferences',
+  saveLabel = 'Save preferences',
+  categories,
+  alwaysOnLabel = 'always on',
+} = Astro.props;
+---
+
+<div privion-preferences hidden>
+  <h2>{title}</h2>
+  <slot>
+    {
+      categories?.map((category) => (
+        <CategoryToggle category={category} alwaysOnLabel={alwaysOnLabel} />
+      ))
+    }
+  </slot>
+  <button privion-save-preferences>{saveLabel}</button>
+</div>
