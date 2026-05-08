@@ -23,34 +23,30 @@ npm install @privion-consent/react
 
 ## Development
 
+See [AGENTS.md](./AGENTS.md) for the full contributor guide (setup, develop, verify, build, PR process, releases).
+
+Quick reference:
+
 ```bash
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Run dev mode
-pnpm dev
-
-# Run tests
-pnpm test
-
-# Type check
-pnpm type-check
+pnpm install      # install dependencies
+pnpm build        # build all packages
+pnpm dev          # watch mode
+pnpm test         # run tests
+pnpm type-check   # type check
+pnpm verify       # format:check + type-check + lint + test (run before opening a PR)
 ```
 
 ## Release Process
 
-See [RELEASE.md](./RELEASE.md) for information about the release process using Changesets.
+Releases are fully automated via [release-please](https://github.com/googleapis/release-please) in monorepo manifest mode. Conventional-Commit PR titles drive per-package version bumps and `npm publish`. See [AGENTS.md](./AGENTS.md#releases) for details.
 
 ## Usage
 
 ### Vanilla JavaScript
 
 ```javascript
-import { createPrivionConsent } from '@privion-consent/core'
-import { initPrivionDom } from '@privion-consent/dom'
+import { createPrivionConsent } from '@privion-consent/core';
+import { initPrivionDom } from '@privion-consent/dom';
 
 const consent = createPrivionConsent({
   version: 1,
@@ -60,15 +56,15 @@ const consent = createPrivionConsent({
     { id: 'marketing', label: 'Marketing', defaultStatus: 'denied' },
   ],
   googleConsentMode: { mode: 'advanced' },
-})
+});
 
-initPrivionDom(consent)
+initPrivionDom(consent);
 ```
 
 ### React
 
 ```jsx
-import { ConsentProvider, ConsentBanner } from '@privion-consent/react'
+import { ConsentProvider, ConsentBanner } from '@privion-consent/react';
 
 const config = {
   version: 1,
@@ -76,7 +72,7 @@ const config = {
     { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
     { id: 'analytics', label: 'Analytics', defaultStatus: 'denied' },
   ],
-}
+};
 
 function App() {
   return (
@@ -84,7 +80,7 @@ function App() {
       <YourApp />
       <ConsentBanner />
     </ConsentProvider>
-  )
+  );
 }
 ```
 
