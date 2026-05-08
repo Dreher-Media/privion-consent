@@ -293,12 +293,19 @@ export class PrivionConsent {
   }
 
   /**
-   * Sync Google Consent Mode
+   * Sync Google Consent Mode.
+   *
+   * The first emission is treated as `default` only when no decision is
+   * on file yet. Returning visitors with stored consent get `update` on
+   * init so their actual choice propagates to gtag/dataLayer immediately
+   * — without us first announcing an all-denied default that would
+   * conflict with their stored state.
    */
   syncGoogleConsentMode(options?: { mode?: 'basic' | 'advanced' }): void {
     const mode = options?.mode || this.config.googleConsentMode?.mode || 'basic';
     const mapping = computeGoogleConsentMode(this.state, this.config);
-    syncGoogleConsentMode(mapping, mode, !this.hasSyncedGoogle);
+    const isFirstLoad = !this.hasSyncedGoogle && !this.state.userDecided;
+    syncGoogleConsentMode(mapping, mode, isFirstLoad);
     this.hasSyncedGoogle = true;
   }
 
