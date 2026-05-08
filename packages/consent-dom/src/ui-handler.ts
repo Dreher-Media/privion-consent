@@ -1,16 +1,16 @@
-import type { PrivionConsent } from '@privion-consent/core'
+import type { PrivionConsent } from '@privion-consent/core';
 
 /**
  * Handle UI elements (banner, preferences, buttons)
  */
 export class UIHandler {
-  private consent: PrivionConsent
-  private banner: HTMLElement | null = null
-  private preferences: HTMLElement | null = null
-  private hasInitializedVisibility = false
+  private consent: PrivionConsent;
+  private banner: HTMLElement | null = null;
+  private preferences: HTMLElement | null = null;
+  private hasInitializedVisibility = false;
 
   constructor(consent: PrivionConsent) {
-    this.consent = consent
+    this.consent = consent;
   }
 
   /**
@@ -18,45 +18,45 @@ export class UIHandler {
    */
   init(root: HTMLElement | Document = document): void {
     // Find banner and preferences
-    this.banner = root.querySelector('[privion-banner]')
-    this.preferences = root.querySelector('[privion-preferences]')
+    this.banner = root.querySelector('[privion-banner]');
+    this.preferences = root.querySelector('[privion-preferences]');
 
     // Hide by default to prevent loading flash
     // They will be shown when needed
     if (this.banner) {
-      this.banner.hidden = true
+      this.banner.hidden = true;
     }
     if (this.preferences) {
-      this.preferences.hidden = true
+      this.preferences.hidden = true;
     }
 
     // Wire up buttons
-    this.wireButtons(root)
+    this.wireButtons(root);
 
     // Initial visibility - update once after ready event
     // The 'ready' event is emitted synchronously in the constructor,
     // so we need to check if it already fired
     const updateInitialVisibility = () => {
       if (!this.hasInitializedVisibility && this.banner) {
-        this.hasInitializedVisibility = true
+        this.hasInitializedVisibility = true;
         // Use setTimeout to ensure DOM is fully ready and avoid race conditions
         setTimeout(() => {
-          this.updateBannerVisibility()
-        }, 10)
+          this.updateBannerVisibility();
+        }, 10);
       }
-    }
+    };
 
     // Subscribe to ready event (will fire if not already fired)
-    this.consent.on('ready', updateInitialVisibility)
+    this.consent.on('ready', updateInitialVisibility);
 
     // Check immediately - if ready already fired, this will update
     // If not, the event handler above will handle it
-    updateInitialVisibility()
+    updateInitialVisibility();
 
     // Subscribe to updates to show banner if needed
     this.consent.on('update', () => {
-      this.updateBannerVisibility()
-    })
+      this.updateBannerVisibility();
+    });
   }
 
   /**
@@ -64,91 +64,91 @@ export class UIHandler {
    */
   private wireButtons(root: HTMLElement | Document): void {
     // Accept all button
-    const acceptAllBtn = root.querySelector('[privion-accept-all]')
+    const acceptAllBtn = root.querySelector('[privion-accept-all]');
     if (acceptAllBtn) {
       acceptAllBtn.addEventListener('click', () => {
-        this.consent.acceptAll()
-        this.hideBanner()
-        this.hidePreferences()
-      })
+        this.consent.acceptAll();
+        this.hideBanner();
+        this.hidePreferences();
+      });
     }
 
     // Reject all button
-    const rejectAllBtn = root.querySelector('[privion-reject-all]')
+    const rejectAllBtn = root.querySelector('[privion-reject-all]');
     if (rejectAllBtn) {
       rejectAllBtn.addEventListener('click', () => {
-        this.consent.rejectAll()
-        this.hideBanner()
-        this.hidePreferences()
-      })
+        this.consent.rejectAll();
+        this.hideBanner();
+        this.hidePreferences();
+      });
     }
 
     // Open preferences buttons (can be multiple)
-    const openPrefsBtns = root.querySelectorAll('[privion-open-preferences]')
+    const openPrefsBtns = root.querySelectorAll('[privion-open-preferences]');
     openPrefsBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
-        this.showPreferences()
-      })
-    })
+        this.showPreferences();
+      });
+    });
 
     // Save preferences button
-    const savePrefsBtn = root.querySelector('[privion-save-preferences]')
+    const savePrefsBtn = root.querySelector('[privion-save-preferences]');
     if (savePrefsBtn) {
       savePrefsBtn.addEventListener('click', () => {
-        this.savePreferences()
-        this.hideBanner()
-        this.hidePreferences()
-      })
+        this.savePreferences();
+        this.hideBanner();
+        this.hidePreferences();
+      });
     }
 
     // Wire up toggles
-    this.wireToggles(root)
+    this.wireToggles(root);
   }
 
   /**
    * Wire up category toggle checkboxes
    */
   private wireToggles(root: HTMLElement | Document): void {
-    const toggles = root.querySelectorAll<HTMLInputElement>('[privion-toggle]')
+    const toggles = root.querySelectorAll<HTMLInputElement>('[privion-toggle]');
 
     for (const toggle of Array.from(toggles)) {
-      const categoryId = toggle.getAttribute('privion-toggle')
+      const categoryId = toggle.getAttribute('privion-toggle');
       if (!categoryId) {
-        continue
+        continue;
       }
 
       // Set initial state
-      const state = this.consent.getState()
-      const status = state.categories[categoryId] || 'unknown'
-      toggle.checked = status === 'granted'
+      const state = this.consent.getState();
+      const status = state.categories[categoryId] || 'unknown';
+      toggle.checked = status === 'granted';
 
       // Handle changes
       toggle.addEventListener('change', () => {
-        const newStatus = toggle.checked ? 'granted' : 'denied'
-        this.consent.setCategory(categoryId, newStatus)
-      })
+        const newStatus = toggle.checked ? 'granted' : 'denied';
+        this.consent.setCategory(categoryId, newStatus);
+      });
 
       // Update on consent changes
       this.consent.on('update', (state) => {
-        const currentStatus = state.categories[categoryId] || 'unknown'
-        toggle.checked = currentStatus === 'granted'
-      })
+        const currentStatus = state.categories[categoryId] || 'unknown';
+        toggle.checked = currentStatus === 'granted';
+      });
     }
 
     // Wire up required category displays
-    const required = root.querySelectorAll('[privion-required]')
+    const required = root.querySelectorAll('[privion-required]');
     for (const element of Array.from(required)) {
-      const categoryId = element.getAttribute('privion-required')
+      const categoryId = element.getAttribute('privion-required');
       if (!categoryId) {
-        continue
+        continue;
       }
 
       const checkbox = (element as HTMLElement).querySelector<HTMLInputElement>(
-        'input[type="checkbox"]'
-      )
+        'input[type="checkbox"]',
+      );
       if (checkbox) {
-        checkbox.disabled = true
-        checkbox.checked = true
+        checkbox.disabled = true;
+        checkbox.checked = true;
       }
     }
   }
@@ -158,14 +158,14 @@ export class UIHandler {
    */
   private updateBannerVisibility(): void {
     if (!this.banner) {
-      return
+      return;
     }
 
-    const state = this.consent.getState()
-    const config = this.consent.getConfig()
+    const state = this.consent.getState();
+    const config = this.consent.getConfig();
 
     // Only check optional categories (required categories are always granted)
-    const optionalCategories = config.categories.filter((cat) => !cat.required)
+    const optionalCategories = config.categories.filter((cat) => !cat.required);
 
     // Check if user has made an explicit decision
     // A decision is made if:
@@ -174,11 +174,11 @@ export class UIHandler {
     //
     // Important: If source is 'api', it means this is initial/default state, so show banner
     // If source is 'banner' or 'preferences', user already made a choice, so hide banner
-    const hasUserDecision = state.source === 'banner' || state.source === 'preferences'
+    const hasUserDecision = state.source === 'banner' || state.source === 'preferences';
 
     // Show banner if no user decision has been made
     // The banner should show on first visit (source: 'api') regardless of defaultStatus
-    this.banner.hidden = hasUserDecision
+    this.banner.hidden = hasUserDecision;
   }
 
   /**
@@ -186,7 +186,7 @@ export class UIHandler {
    */
   private showPreferences(): void {
     if (this.preferences) {
-      this.preferences.hidden = false
+      this.preferences.hidden = false;
     }
   }
 
@@ -195,7 +195,7 @@ export class UIHandler {
    */
   private hidePreferences(): void {
     if (this.preferences) {
-      this.preferences.hidden = true
+      this.preferences.hidden = true;
     }
   }
 
@@ -204,7 +204,7 @@ export class UIHandler {
    */
   private hideBanner(): void {
     if (this.banner) {
-      this.banner.hidden = true
+      this.banner.hidden = true;
     }
   }
 
@@ -212,24 +212,24 @@ export class UIHandler {
    * Save preferences from toggles
    */
   private savePreferences(): void {
-    const state = this.consent.getState()
-    const updates: Record<string, 'granted' | 'denied'> = {}
+    const state = this.consent.getState();
+    const updates: Record<string, 'granted' | 'denied'> = {};
 
     // Read all toggles
-    const toggles = document.querySelectorAll<HTMLInputElement>('[privion-toggle]')
+    const toggles = document.querySelectorAll<HTMLInputElement>('[privion-toggle]');
     for (const toggle of Array.from(toggles)) {
-      const categoryId = toggle.getAttribute('privion-toggle')
+      const categoryId = toggle.getAttribute('privion-toggle');
       if (categoryId) {
-        updates[categoryId] = toggle.checked ? 'granted' : 'denied'
+        updates[categoryId] = toggle.checked ? 'granted' : 'denied';
       }
     }
 
     // Apply updates
     if (Object.keys(updates).length > 0) {
-      this.consent.setMany(updates)
+      this.consent.setMany(updates);
       // Mark source as preferences
-      const newState = this.consent.getState()
-      ;(newState as any).source = 'preferences'
+      const newState = this.consent.getState();
+      (newState as any).source = 'preferences';
     }
   }
 }

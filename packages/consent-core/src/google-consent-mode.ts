@@ -2,7 +2,7 @@ import type {
   ConsentState,
   ConsentCategoryConfig,
   GoogleConsentMapping,
-  PrivionConsentConfig
+  PrivionConsentConfig,
 } from './types.js';
 
 /**
@@ -11,13 +11,13 @@ import type {
  */
 const DEFAULT_CATEGORY_MAPPINGS: Record<string, Partial<GoogleConsentMapping>> = {
   analytics: {
-    analytics_storage: 'granted'
+    analytics_storage: 'granted',
   },
   marketing: {
     ad_storage: 'granted',
     ad_user_data: 'granted',
-    ad_personalization: 'granted'
-  }
+    ad_personalization: 'granted',
+  },
 };
 
 /**
@@ -25,14 +25,14 @@ const DEFAULT_CATEGORY_MAPPINGS: Record<string, Partial<GoogleConsentMapping>> =
  */
 export function computeGoogleConsentMode(
   state: ConsentState,
-  config: PrivionConsentConfig
+  config: PrivionConsentConfig,
 ): GoogleConsentMapping {
   // Start with all denied
   const mapping: GoogleConsentMapping = {
     ad_storage: 'denied',
     analytics_storage: 'denied',
     ad_user_data: 'denied',
-    ad_personalization: 'denied'
+    ad_personalization: 'denied',
   };
 
   // Process each category
@@ -41,7 +41,8 @@ export function computeGoogleConsentMode(
 
     if (status === 'granted') {
       // Use category-specific mapping if provided, otherwise use defaults
-      const categoryMapping = category.googleMapping || DEFAULT_CATEGORY_MAPPINGS[category.id] || {};
+      const categoryMapping =
+        category.googleMapping || DEFAULT_CATEGORY_MAPPINGS[category.id] || {};
 
       // Apply the mapping
       if (categoryMapping.ad_storage) {
@@ -68,7 +69,7 @@ export function computeGoogleConsentMode(
 export function syncGoogleConsentMode(
   mapping: GoogleConsentMapping,
   mode: 'basic' | 'advanced' = 'basic',
-  isFirstLoad: boolean = false
+  isFirstLoad: boolean = false,
 ): void {
   const command = isFirstLoad ? 'default' : 'update';
 
@@ -82,7 +83,7 @@ export function syncGoogleConsentMode(
   if (typeof window !== 'undefined' && (window as any).dataLayer) {
     (window as any).dataLayer.push({
       event: 'consent_' + command,
-      ...mapping
+      ...mapping,
     });
     return;
   }
@@ -91,8 +92,8 @@ export function syncGoogleConsentMode(
   if (typeof window !== 'undefined') {
     window.dispatchEvent(
       new CustomEvent('privion:google-consent-mode', {
-        detail: { command, mapping, mode }
-      })
+        detail: { command, mapping, mode },
+      }),
     );
   }
 }

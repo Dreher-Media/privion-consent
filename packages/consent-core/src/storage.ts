@@ -9,15 +9,9 @@ const DEFAULT_STORAGE_TYPE = 'cookie';
 function setCookie(
   name: string,
   value: string,
-  options: StorageConfig['cookieOptions'] = {}
+  options: StorageConfig['cookieOptions'] = {},
 ): void {
-  const {
-    path = '/',
-    domain,
-    maxAgeDays = 365,
-    secure = true,
-    sameSite = 'Lax'
-  } = options;
+  const { path = '/', domain, maxAgeDays = 365, secure = true, sameSite = 'Lax' } = options;
 
   let cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
   cookie += `; path=${path}`;

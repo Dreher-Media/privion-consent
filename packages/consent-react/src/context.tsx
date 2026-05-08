@@ -21,7 +21,7 @@ export interface ConsentProviderProps {
 export function ConsentProvider({
   config,
   children,
-  initialState
+  initialState,
 }: ConsentProviderProps): JSX.Element {
   const [consent] = useState<PrivionConsent>(() => {
     // Only create on client
@@ -46,7 +46,7 @@ export function ConsentProvider({
       categories: {},
       updatedAt: new Date().toISOString(),
       version: config.version,
-      source: 'api'
+      source: 'api',
     };
   });
 
@@ -104,11 +104,7 @@ export function ConsentProvider({
     return <>{children}</>;
   }
 
-  return (
-    <ConsentContext.Provider value={{ consent, state }}>
-      {children}
-    </ConsentContext.Provider>
-  );
+  return <ConsentContext.Provider value={{ consent, state }}>{children}</ConsentContext.Provider>;
 }
 
 /**

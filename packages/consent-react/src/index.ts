@@ -1,9 +1,9 @@
 // Context and hooks
-export { ConsentProvider, useConsent } from './context.js'
-export { useConsentCategory } from './hooks.js'
+export { ConsentProvider, useConsent } from './context.js';
+export { useConsentCategory } from './hooks.js';
 
 // Components
-export { ConsentBanner, ConsentPreferences } from './components.js'
+export { ConsentBanner, ConsentPreferences } from './components.js';
 
 // Re-export types from core
 export type {
@@ -15,4 +15,4 @@ export type {
   StorageConfig,
   BackendSyncConfig,
   PrivionConsentConfig,
-} from '@privion-consent/core'
+} from '@privion-consent/core';

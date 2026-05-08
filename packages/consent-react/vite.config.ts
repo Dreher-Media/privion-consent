@@ -8,7 +8,7 @@ export default defineConfig({
       entry: resolve(__dirname, 'src/index.ts'),
       name: 'PrivionConsentReact',
       fileName: 'index',
-      formats: ['es']
+      formats: ['es'],
     },
     rollupOptions: {
       external: ['react', 'react-dom'],
@@ -17,15 +17,15 @@ export default defineConfig({
         preserveModulesRoot: 'src',
         globals: {
           react: 'React',
-          'react-dom': 'ReactDOM'
-        }
-      }
-    }
+          'react-dom': 'ReactDOM',
+        },
+      },
+    },
   },
   plugins: [dts({ insertTypesEntry: true })],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src')
-    }
-  }
+      '@': resolve(__dirname, 'src'),
+    },
+  },
 });

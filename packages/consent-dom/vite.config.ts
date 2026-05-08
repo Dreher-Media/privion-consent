@@ -8,19 +8,19 @@ export default defineConfig({
       entry: resolve(__dirname, 'src/index.ts'),
       name: 'PrivionConsentDom',
       fileName: 'index',
-      formats: ['es']
+      formats: ['es'],
     },
     rollupOptions: {
       output: {
         preserveModules: true,
-        preserveModulesRoot: 'src'
-      }
-    }
+        preserveModulesRoot: 'src',
+      },
+    },
   },
   plugins: [dts({ insertTypesEntry: true })],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src')
-    }
-  }
+      '@': resolve(__dirname, 'src'),
+    },
+  },
 });
