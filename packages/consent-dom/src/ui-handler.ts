@@ -8,6 +8,7 @@ export class UIHandler {
   private banner: HTMLElement | null = null;
   private preferences: HTMLElement | null = null;
   private hasInitializedVisibility = false;
+  private unsubscribes: Array<() => void> = [];
 
   constructor(consent: PrivionConsent) {
     this.consent = consent;
@@ -47,16 +48,26 @@ export class UIHandler {
     };
 
     // Subscribe to ready event (will fire if not already fired)
-    this.consent.on('ready', updateInitialVisibility);
+    this.unsubscribes.push(this.consent.on('ready', updateInitialVisibility));
 
     // Check immediately - if ready already fired, this will update
     // If not, the event handler above will handle it
     updateInitialVisibility();
 
     // Subscribe to updates to show banner if needed
-    this.consent.on('update', () => {
-      this.updateBannerVisibility();
-    });
+    this.unsubscribes.push(
+      this.consent.on('update', () => {
+        this.updateBannerVisibility();
+      }),
+    );
+  }
+
+  /**
+   * Cleanup
+   */
+  destroy(): void {
+    for (const unsub of this.unsubscribes) unsub();
+    this.unsubscribes = [];
   }
 
   /**

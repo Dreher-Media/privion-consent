@@ -44,8 +44,7 @@ function getCookie(name: string): string | null {
   const nameEQ = `${encodeURIComponent(name)}=`;
   const cookies = document.cookie.split(';');
 
-  for (let i = 0; i < cookies.length; i++) {
-    let cookie = cookies[i];
+  for (let cookie of cookies) {
     while (cookie.charAt(0) === ' ') {
       cookie = cookie.substring(1, cookie.length);
     }
@@ -180,10 +179,16 @@ export function resolveStorage(
   }
   const config = input ?? {};
   const type = config.type ?? DEFAULT_STORAGE_TYPE;
+  // Build the options object with conditional spreads so missing keys
+  // stay omitted — `exactOptionalPropertyTypes: true` rejects an
+  // explicit `undefined` for an optional `key?: string` parameter.
   if (type === 'localStorage') {
-    return new LocalStorageAdapter({ key: config.key });
+    return new LocalStorageAdapter(config.key !== undefined ? { key: config.key } : undefined);
   }
-  return new CookieStorage({ key: config.key, cookieOptions: config.cookieOptions });
+  return new CookieStorage({
+    ...(config.key !== undefined ? { key: config.key } : {}),
+    ...(config.cookieOptions !== undefined ? { cookieOptions: config.cookieOptions } : {}),
+  });
 }
 
 /**

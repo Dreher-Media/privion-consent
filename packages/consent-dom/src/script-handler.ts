@@ -1,6 +1,6 @@
-import type { PrivionConsent, ConsentState } from '@privion-consent/core';
+import type { ConsentState, PrivionConsent } from '@privion-consent/core';
 import type { CategoryMatchMode } from './types.js';
-import { parseCategories, areCategoriesAllowed } from './utils.js';
+import { areCategoriesAllowed, parseCategories } from './utils.js';
 
 interface ScriptElement {
   element: HTMLScriptElement;
@@ -8,14 +8,23 @@ interface ScriptElement {
   activated: boolean;
 }
 
+const SCRIPT_SELECTOR = 'script[type="privion"]';
+
 /**
- * Handle script elements with type="privion"
+ * Handle script elements with type="privion".
+ *
+ * Watches the DOM via `MutationObserver` so scripts injected after the
+ * initial scan (SPA-style hydration, async-loaded markup, framework
+ * islands) still get registered and activated when consent grants the
+ * matching categories.
  */
 export class ScriptHandler {
   private consent: PrivionConsent;
   private mode: CategoryMatchMode;
   private scripts: Map<HTMLScriptElement, ScriptElement> = new Map();
-  private unsubscribe: (() => void) | null = null;
+  private unsubscribeUpdate: (() => void) | null = null;
+  private unsubscribeReady: (() => void) | null = null;
+  private observer: MutationObserver | null = null;
 
   constructor(consent: PrivionConsent, mode: CategoryMatchMode = 'any') {
     this.consent = consent;
@@ -26,43 +35,60 @@ export class ScriptHandler {
    * Initialize script handler
    */
   init(root: HTMLElement | Document = document): void {
-    // Scan for existing scripts
-    this.scanScripts(root);
+    this.scanForScripts(root);
 
-    // Subscribe to consent updates
-    this.unsubscribe = this.consent.on('update', (state) => {
+    this.unsubscribeUpdate = this.consent.on('update', (state) => {
+      this.handleConsentUpdate(state);
+    });
+    this.unsubscribeReady = this.consent.on('ready', (state) => {
       this.handleConsentUpdate(state);
     });
 
-    // Also handle ready event in case scripts are added before consent is ready
-    this.consent.on('ready', (state) => {
-      this.handleConsentUpdate(state);
+    // Watch for scripts injected after the initial scan.
+    this.observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of Array.from(mutation.addedNodes)) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          this.scanForScripts(node as Element);
+        }
+      }
     });
+    const target = root instanceof Document ? root.documentElement : root;
+    if (target) {
+      this.observer.observe(target, { childList: true, subtree: true });
+    }
   }
 
   /**
-   * Scan DOM for scripts with type="privion"
+   * Register every privion script reachable from `root` — both the
+   * element itself (if it matches) and any matching descendants.
+   * Handles both the initial scan and MutationObserver callbacks.
    */
-  private scanScripts(root: HTMLElement | Document): void {
-    const scripts = root.querySelectorAll<HTMLScriptElement>('script[type="privion"]');
+  private scanForScripts(root: Element | Document): void {
+    if (root instanceof Element && root.matches?.(SCRIPT_SELECTOR)) {
+      this.registerScript(root as HTMLScriptElement);
+    }
+    const descendants = root.querySelectorAll<HTMLScriptElement>(SCRIPT_SELECTOR);
+    for (const script of Array.from(descendants)) {
+      this.registerScript(script);
+    }
+  }
 
-    for (const script of Array.from(scripts)) {
-      if (!this.scripts.has(script)) {
-        const categoryAttr = script.getAttribute('privion-category');
-        const categories = parseCategories(categoryAttr);
+  private registerScript(script: HTMLScriptElement): void {
+    if (this.scripts.has(script)) return;
 
-        this.scripts.set(script, {
-          element: script,
-          categories,
-          activated: false,
-        });
+    const categoryAttr = script.getAttribute('privion-category');
+    const categories = parseCategories(categoryAttr);
 
-        // Try to activate immediately if consent is already granted
-        const state = this.consent.getState();
-        if (areCategoriesAllowed(categories, state, this.mode)) {
-          this.activateScript(script);
-        }
-      }
+    this.scripts.set(script, {
+      element: script,
+      categories,
+      activated: false,
+    });
+
+    const state = this.consent.getState();
+    if (areCategoriesAllowed(categories, state, this.mode)) {
+      this.activateScript(script);
     }
   }
 
@@ -87,21 +113,15 @@ export class ScriptHandler {
     if (!data || data.activated) {
       return;
     }
-
-    // Mark as activated
     data.activated = true;
 
-    // Create new script element
     const newScript = document.createElement('script');
 
-    // Copy attributes
     if (originalScript.src) {
       newScript.src = originalScript.src;
     } else if (originalScript.textContent) {
       newScript.textContent = originalScript.textContent;
     }
-
-    // Copy other attributes
     if (originalScript.async) {
       newScript.async = true;
     }
@@ -115,10 +135,12 @@ export class ScriptHandler {
       newScript.crossOrigin = originalScript.crossOrigin;
     }
 
-    // Insert into DOM (prefer after original, fallback to head or body)
+    // Insert after the original (preserves source-order intent for
+    // tracking scripts that expect to run in document order). Fall
+    // back to <head>/<body> if the original has been detached since
+    // registration (rare but possible during framework reconciliation).
     const insertAfter = originalScript.nextSibling;
     const parent = originalScript.parentNode;
-
     if (parent) {
       if (insertAfter) {
         parent.insertBefore(newScript, insertAfter);
@@ -126,7 +148,6 @@ export class ScriptHandler {
         parent.appendChild(newScript);
       }
     } else {
-      // Fallback: append to head or body
       const target = document.head || document.body;
       if (target) {
         target.appendChild(newScript);
@@ -138,10 +159,12 @@ export class ScriptHandler {
    * Cleanup
    */
   destroy(): void {
-    if (this.unsubscribe) {
-      this.unsubscribe();
-      this.unsubscribe = null;
-    }
+    this.unsubscribeUpdate?.();
+    this.unsubscribeReady?.();
+    this.unsubscribeUpdate = null;
+    this.unsubscribeReady = null;
+    this.observer?.disconnect();
+    this.observer = null;
     this.scripts.clear();
   }
 }

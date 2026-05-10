@@ -1,4 +1,4 @@
-import type { PrivionConsent, ConsentState } from '@privion-consent/core';
+import type { ConsentState, PrivionConsent } from '@privion-consent/core';
 import { computeVisibility } from './utils.js';
 
 interface VisibilityElement {
@@ -7,13 +7,20 @@ interface VisibilityElement {
   originalDisplay: string | null;
 }
 
+const VISIBILITY_SELECTOR = '[privion]';
+
 /**
- * Handle element visibility based on privion attribute
+ * Handle element visibility based on the `privion` attribute.
+ *
+ * Watches the DOM via `MutationObserver` so elements injected after
+ * the initial scan still get registered and tracked.
  */
 export class VisibilityHandler {
   private consent: PrivionConsent;
   private elements: Map<HTMLElement, VisibilityElement> = new Map();
-  private unsubscribe: (() => void) | null = null;
+  private unsubscribeUpdate: (() => void) | null = null;
+  private unsubscribeReady: (() => void) | null = null;
+  private observer: MutationObserver | null = null;
 
   constructor(consent: PrivionConsent) {
     this.consent = consent;
@@ -23,48 +30,62 @@ export class VisibilityHandler {
    * Initialize visibility handler
    */
   init(root: HTMLElement | Document = document): void {
-    // Scan for existing elements
-    this.scanElements(root);
+    this.scanForElements(root);
 
-    // Subscribe to consent updates
-    this.unsubscribe = this.consent.on('update', (state) => {
+    this.unsubscribeUpdate = this.consent.on('update', (state) => {
+      this.handleConsentUpdate(state);
+    });
+    this.unsubscribeReady = this.consent.on('ready', (state) => {
       this.handleConsentUpdate(state);
     });
 
-    // Also handle ready event
-    this.consent.on('ready', (state) => {
-      this.handleConsentUpdate(state);
+    this.observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        for (const node of Array.from(mutation.addedNodes)) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          this.scanForElements(node as Element);
+        }
+      }
     });
+    const target = root instanceof Document ? root.documentElement : root;
+    if (target) {
+      this.observer.observe(target, { childList: true, subtree: true });
+    }
   }
 
   /**
-   * Scan DOM for elements with privion attribute
+   * Register every `[privion]` element reachable from `root` — the
+   * element itself (if it matches) plus any matching descendants.
+   * Skips `script[type="privion"]` since those are owned by
+   * `ScriptHandler` and should not be hidden via `display: none`.
    */
-  private scanElements(root: HTMLElement | Document): void {
-    // Find all elements with privion attribute, excluding scripts with type="privion"
-    const allElements = root.querySelectorAll<HTMLElement>('[privion]');
-
-    for (const element of Array.from(allElements)) {
-      // Skip scripts with type="privion" (handled separately)
-      if (element.tagName === 'SCRIPT' && element.getAttribute('type') === 'privion') {
-        continue;
-      }
-
-      if (!this.elements.has(element)) {
-        const expression = element.getAttribute('privion');
-        const originalDisplay = element.style.display || null;
-
-        this.elements.set(element, {
-          element,
-          expression: expression || '',
-          originalDisplay,
-        });
-
-        // Apply initial visibility
-        const state = this.consent.getState();
-        this.updateElementVisibility(element, state);
-      }
+  private scanForElements(root: Element | Document): void {
+    if (root instanceof Element && root.matches?.(VISIBILITY_SELECTOR)) {
+      this.registerElement(root as HTMLElement);
     }
+    const descendants = root.querySelectorAll<HTMLElement>(VISIBILITY_SELECTOR);
+    for (const el of Array.from(descendants)) {
+      this.registerElement(el);
+    }
+  }
+
+  private registerElement(element: HTMLElement): void {
+    if (this.elements.has(element)) return;
+    if (element.tagName === 'SCRIPT' && element.getAttribute('type') === 'privion') {
+      return;
+    }
+
+    const expression = element.getAttribute('privion');
+    const originalDisplay = element.style.display || null;
+
+    this.elements.set(element, {
+      element,
+      expression: expression || '',
+      originalDisplay,
+    });
+
+    const state = this.consent.getState();
+    this.updateElementVisibility(element, state);
   }
 
   /**
@@ -88,14 +109,12 @@ export class VisibilityHandler {
     const visible = computeVisibility(data.expression, state);
 
     if (visible) {
-      // Restore original display or remove inline style
       if (data.originalDisplay !== null) {
         element.style.display = data.originalDisplay;
       } else {
         element.style.display = '';
       }
     } else {
-      // Hide element
       element.style.display = 'none';
     }
   }
@@ -104,10 +123,12 @@ export class VisibilityHandler {
    * Cleanup
    */
   destroy(): void {
-    if (this.unsubscribe) {
-      this.unsubscribe();
-      this.unsubscribe = null;
-    }
+    this.unsubscribeUpdate?.();
+    this.unsubscribeReady?.();
+    this.unsubscribeUpdate = null;
+    this.unsubscribeReady = null;
+    this.observer?.disconnect();
+    this.observer = null;
     this.elements.clear();
   }
 }
