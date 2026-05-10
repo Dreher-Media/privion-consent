@@ -12,12 +12,19 @@
   ],
   "author": "Tobias Laufersweiler",
   "license": "MIT",
+  "homepage": "https://github.com/Dreher-Media/privion-consent#readme",
   "repository": {
     "type": "git",
     "url": "https://github.com/Dreher-Media/privion-consent.git",
     "directory": "packages/consent-dom"
   },
+  "bugs": {
+    "url": "https://github.com/Dreher-Media/privion-consent/issues"
+  },
   "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
