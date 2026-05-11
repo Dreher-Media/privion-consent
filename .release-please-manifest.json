@@ -2,5 +2,5 @@
   "packages/consent-core": "1.0.0",
   "packages/consent-dom": "1.0.0",
   "packages/consent-react": "1.0.0",
-  "packages/consent-astro": "1.0.0"
+  "packages/consent-astro": "1.1.0"
 }

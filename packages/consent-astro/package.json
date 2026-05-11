@@ -1,6 +1,6 @@
 {
   "name": "@privion-consent/astro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Astro components and helpers for Privion Consent",
   "keywords": [
     "consent",
