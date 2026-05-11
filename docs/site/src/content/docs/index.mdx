@@ -1,0 +1,43 @@
+---
+title: Privion Consent
+description: GDPR / ePrivacy consent management for vanilla JS, React, and Astro projects.
+template: splash
+hero:
+  tagline: Headless, region-aware consent with Google Consent Mode v2 support — drop into vanilla pages, React apps, or Astro sites.
+  actions:
+    - text: Get started
+      link: /guides/install/
+      icon: right-arrow
+      variant: primary
+    - text: View on GitHub
+      link: https://github.com/Dreher-Media/privion-consent
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why this library
+
+<CardGrid>
+  <Card title="Headless by default" icon="puzzle">
+    The components emit `[privion-banner]` / `[data-privion-banner]` attributes and let your CSS take over. Opt into the bundled stylesheet for a working baseline, or ship your own.
+  </Card>
+  <Card title="Region-aware" icon="globe">
+    Map ISO country codes to `opt-in` / `opt-out` defaults so EU / UK / CH visitors get the banner and the rest of the world doesn't — without shipping a geo database.
+  </Card>
+  <Card title="Google Consent Mode v2" icon="approve-check">
+    Native support for `basic` and `advanced` modes with correct `default` / `update` sequencing. Returning visitors get `update` on init so their stored decision propagates to gtag immediately.
+  </Card>
+  <Card title="Late-injection safe" icon="rocket">
+    A `MutationObserver` re-scans the DOM for tagged scripts, iframes, and visibility-keyed elements after the initial mount — works in SPAs, Astro islands, and any framework that hydrates async.
+  </Card>
+</CardGrid>
+
+## Packages
+
+| Package                                                                 | What it's for                                                   |
+| ----------------------------------------------------------------------- | --------------------------------------------------------------- |
+| [`@privion-consent/core`](https://www.npmjs.com/package/@privion-consent/core)   | Framework-agnostic engine: state, storage, GCM, backend sync.   |
+| [`@privion-consent/dom`](https://www.npmjs.com/package/@privion-consent/dom)     | DOM adapter: script gating, iframe gating, visibility, UI hooks.|
+| [`@privion-consent/react`](https://www.npmjs.com/package/@privion-consent/react) | React provider, hooks, headless components, i18n.               |
+| [`@privion-consent/astro`](https://www.npmjs.com/package/@privion-consent/astro) | Astro components + SSR helpers (`resolveRegion`).               |
