@@ -2,7 +2,7 @@
 
 This document is the canonical reference for what `@privion-consent/*` does, what it doesn't do, and what consumers can rely on. Code, tests, and types are the implementation; this document is the contract.
 
-Status: **draft, working towards v1.0**. Subject to change until the v1.0 release; after that, breaking changes follow [semver](https://semver.org/) and are documented in `MIGRATION.md`.
+Status: **stable as of v1.0**. Breaking changes follow [semver](https://semver.org/) and are documented in [MIGRATION.md](./MIGRATION.md).
 
 ## 1. Compliance scope
 
