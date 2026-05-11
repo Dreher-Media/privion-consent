@@ -1,0 +1,6 @@
+# CODEOWNERS — auto-request review on every PR.
+#
+# Catch-all: everything routes to @TobiasLaufersweiler. Refine with
+# per-path entries (one line per pattern) as the team grows.
+
+* @TobiasLaufersweiler
