@@ -1,0 +1,76 @@
+name: Astro compatibility matrix
+
+# Verifies the @privion-consent/astro peer-dep claim by building +
+# testing the package against both major Astro lines we declare
+# support for. Runs on pull requests that touch the consent-astro
+# package or this workflow, and on every push to main as a sanity
+# net for the release-please publishes.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/consent-astro/**'
+      - 'packages/consent-core/**'
+      - 'packages/consent-dom/**'
+      - 'examples/astro/**'
+      - '.github/workflows/astro-compat.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'packages/consent-astro/**'
+      - '.github/workflows/astro-compat.yml'
+
+jobs:
+  matrix:
+    name: astro@${{ matrix.astro }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        astro: ['4', '5']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Pin astro to the matrix major
+        # Use a pnpm.overrides shim in the root package.json so the
+        # entire workspace (including the consent-astro devDep and
+        # the example app) resolves to the same astro line. Without
+        # this both versions would coexist via pnpm's strict resolver
+        # and tests might pick whichever the symlink wins.
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = './package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          pkg.pnpm ||= {};
+          pkg.pnpm.overrides ||= {};
+          pkg.pnpm.overrides.astro = '^${{ matrix.astro }}.0.0';
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+          echo "--- pnpm.overrides ---"
+          jq '.pnpm' package.json
+
+      - run: pnpm install --no-frozen-lockfile
+
+      - name: Build dependent packages
+        # consent-astro's tsc looks for @privion-consent/core and dom
+        # types under their dist/ — needs both built first.
+        run: pnpm --filter @privion-consent/core --filter @privion-consent/dom build
+
+      - name: Build consent-astro
+        run: pnpm --filter @privion-consent/astro build
+
+      - name: Type-check consent-astro
+        run: pnpm --filter @privion-consent/astro type-check
+
+      - name: Test consent-astro
+        run: pnpm --filter @privion-consent/astro test
+
+      - name: Build example app
+        run: pnpm --filter @privion-consent/example-astro build
