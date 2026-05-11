@@ -6,8 +6,6 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'PrivionConsentReact',
-      fileName: 'index',
       formats: ['es'],
     },
     rollupOptions: {
@@ -15,10 +13,7 @@ export default defineConfig({
       output: {
         preserveModules: true,
         preserveModulesRoot: 'src',
-        globals: {
-          react: 'React',
-          'react-dom': 'ReactDOM',
-        },
+        entryFileNames: '[name].js',
       },
     },
   },

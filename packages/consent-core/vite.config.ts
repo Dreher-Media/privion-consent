@@ -6,14 +6,17 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(__dirname, 'src/index.ts'),
-      name: 'PrivionConsentCore',
-      fileName: 'index',
       formats: ['es'],
     },
     rollupOptions: {
       output: {
+        // Keep each source module as its own emitted file so the dist
+        // tree mirrors src/ — `dist/consent-engine.js` instead of the
+        // anonymous `dist/index2.js` that vite's `lib.fileName` default
+        // produces under preserveModules.
         preserveModules: true,
         preserveModulesRoot: 'src',
+        entryFileNames: '[name].js',
       },
     },
   },

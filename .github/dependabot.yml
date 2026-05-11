@@ -1,0 +1,55 @@
+# Dependabot keeps the dev-tooling and example deps current.
+#
+# Strategy: monthly grouped PRs to avoid noise. Production-facing
+# packages (the four under `packages/`) have their runtime deps
+# scoped tightly via `workspace:*` and a small peer-dep surface, so
+# the noise mostly comes from devDependencies — those are grouped
+# into a single weekly PR per ecosystem to keep review batching
+# reasonable.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      # Match the repo's Conventional-Commit convention so commitlint
+      # is happy on the Dependabot PRs without manual title fixes.
+      prefix: chore
+      include: scope
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+      production-minor-patch:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # Astro 5 has been released but isn't a peer-dep we can bump
+      # without testing every consumer pattern. Manual bump.
+      - dependency-name: astro
+        update-types:
+          - version-update:semver-major
+
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - '*'
