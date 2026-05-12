@@ -10,22 +10,23 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'Privion Consent',
-      description: 'GDPR / ePrivacy consent management for vanilla JS, React, and Astro projects.',
+      description:
+        'GDPR / ePrivacy / TTDSG consent management for vanilla JS, React, and Astro — headless, region-aware, with Google Consent Mode v2.',
       social: {
         github: 'https://github.com/Dreher-Media/privion-consent',
       },
       editLink: {
         baseUrl: 'https://github.com/Dreher-Media/privion-consent/edit/main/docs/site/',
       },
+      lastUpdated: true,
+      tableOfContents: { minHeadingLevel: 2, maxHeadingLevel: 3 },
       sidebar: [
         {
-          label: 'Getting started',
+          label: 'Start here',
           items: [
             { label: 'Overview', link: '/' },
-            { label: 'Install', link: '/guides/install/' },
-            { label: 'Quick start (vanilla)', link: '/guides/quick-start-vanilla/' },
-            { label: 'Quick start (React)', link: '/guides/quick-start-react/' },
-            { label: 'Quick start (Astro)', link: '/guides/quick-start-astro/' },
+            { label: 'Installation', link: '/guides/install/' },
+            { label: 'Quick start', link: '/guides/quick-start/' },
           ],
         },
         {
@@ -40,13 +41,53 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Recipes',
+          items: [
+            {
+              label: 'Block Google Analytics',
+              link: '/recipes/google-analytics/',
+            },
+            {
+              label: 'Resolve region (Cloudflare)',
+              link: '/recipes/cloudflare-region/',
+            },
+            {
+              label: 'Sync to a backend',
+              link: '/recipes/backend-sync/',
+            },
+            {
+              label: 'Customize the UI',
+              link: '/recipes/custom-styling/',
+            },
+            {
+              label: 'Migrate from another library',
+              link: '/recipes/migrate-from-other/',
+            },
+            {
+              label: 'Astro: non-serializable config',
+              link: '/recipes/astro-callbacks/',
+            },
+            {
+              label: 'SPA route teardown',
+              link: '/recipes/spa-route-teardown/',
+            },
+          ],
+        },
+        {
           label: 'Reference',
           items: [
+            { label: 'API', link: '/reference/api/' },
             { label: 'Attribute schema', link: '/reference/attribute-schema/' },
-            { label: 'Public API', link: '/reference/api/' },
             { label: 'Default styles', link: '/reference/styles/' },
-            { label: 'Migration guide', link: '/reference/migration/' },
             { label: 'Specification', link: '/reference/specification/' },
+            { label: 'Migration guide', link: '/reference/migration/' },
+          ],
+        },
+        {
+          label: 'Help',
+          items: [
+            { label: 'Troubleshooting', link: '/guides/troubleshooting/' },
+            { label: 'FAQ', link: '/guides/faq/' },
           ],
         },
       ],

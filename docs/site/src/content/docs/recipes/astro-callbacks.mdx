@@ -1,0 +1,149 @@
+---
+title: Astro — non-serializable config (callbacks, custom adapters)
+description: How to use onSyncError, payloadTransform, custom storage adapters in an Astro project.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## The constraint
+
+`<PrivionScript config={...}>` serializes the config as JSON into a `<script type="application/json">` block, then a small bundled script reads it back and calls `bootPrivion(config)`. JSON can't survive callbacks, class instances, or anything non-data:
+
+```astro
+---
+// ❌ These don't survive serialization
+const config = {
+  // ...
+  backendSync: {
+    endpoint: '/api/consent',
+    onSyncError: (err) => Sentry.captureException(err),     // function → lost
+    payloadTransform: (state) => ({ ...state, ts: Date() }),// function → lost
+  },
+  storage: new IndexedDBAdapter(),                          // class instance → lost
+  migrations: [
+    { from: 1, to: 2, migrate: (s) => /* ... */ },          // function → lost
+  ],
+};
+---
+<PrivionScript config={config} />
+```
+
+## The fix
+
+Bypass `<PrivionScript>` and construct the engine yourself inside a regular Astro `<script>`. The bundled `<script>` has access to imported functions, class instances, and module-level closures — anything you'd have in normal client-side JS.
+
+```astro
+---
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
+import { resolveRegion } from '@privion-consent/astro/server';
+
+// Resolve serializable bits at request time
+const region = resolveRegion(Astro.request.headers);
+const regionJson = JSON.stringify({ region });
+---
+
+<!doctype html>
+<html>
+  <head>
+    <!-- Pass server-resolved values via a JSON script block -->
+    <script id="privion-server-data" type="application/json" set:html={regionJson}></script>
+
+    <!-- Boot script: bundled, has access to imports + closures -->
+    <script>
+      import * as Sentry from '@sentry/browser';
+      import { createPrivionConsent } from '@privion-consent/core';
+      import { initPrivionDom } from '@privion-consent/dom';
+
+      const serverData = JSON.parse(
+        document.getElementById('privion-server-data').textContent,
+      );
+
+      const consent = createPrivionConsent({
+        version: 1,
+        region: serverData.region,
+        regionRules: { DE: { mode: 'opt-in' }, GB: { mode: 'opt-in' } },
+        defaultRegionMode: 'opt-out',
+        categories: [
+          { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+          { id: 'analytics', label: 'Analytics' },
+        ],
+        storage: { type: 'localStorage' },
+        backendSync: {
+          endpoint: '/api/consent',
+          retries: 5,
+          onSyncError: (err) => {
+            if (err.attempt < err.totalAttempts) return;
+            Sentry.captureException(new Error(`consent sync ${err.cause}`), {
+              contexts: { consent_sync: err },
+            });
+          },
+          payloadTransform: (state) => ({
+            apiVersion: '2.0',
+            timestamp: Date.now(),
+            consent: state,
+          }),
+        },
+      });
+
+      initPrivionDom(consent);
+      window.__privionConsent = consent;
+    </script>
+  </head>
+
+  <body>
+    <slot />
+    <ConsentBanner />
+    <ConsentPreferences />
+  </body>
+</html>
+```
+
+## Pattern split: what stays in the JSON block vs what stays in the bundled `<script>`
+
+| Concern                          | Where it lives                             |
+| -------------------------------- | ------------------------------------------ |
+| `region` resolved from headers   | JSON block (server → client passthrough)   |
+| `regionRules`, `categories`, `defaultRegionMode` | Bundled `<script>` (or JSON block — both work) |
+| `storage` (built-in)             | Bundled `<script>` (just config)           |
+| `storage` (custom adapter class) | Bundled `<script>` (instantiate inline)    |
+| `googleConsentMode`              | Either (just config)                       |
+| `backendSync.endpoint`           | Either                                     |
+| `backendSync.onSyncError`        | **Bundled `<script>` only** (function)     |
+| `backendSync.payloadTransform`   | **Bundled `<script>` only** (function)     |
+| `migrations`                     | **Bundled `<script>` only** (function)     |
+
+For anything that *can* live in the JSON block, putting it there has one benefit: SSR-debug-friendly — you can `view-source:` the page and see the resolved config.
+
+## Subscribing from elsewhere
+
+`window.__privionConsent` is set after `initPrivionDom`. From any other client script (an Astro page-level `<script>`, a third-party widget, etc.):
+
+```astro
+<script>
+  function whenReady(cb) {
+    if (window.__privionConsent) return cb(window.__privionConsent);
+    queueMicrotask(() => whenReady(cb));
+  }
+
+  whenReady((consent) => {
+    consent.on('update', (state) => {
+      console.log('consent changed', state);
+    });
+  });
+</script>
+```
+
+The `whenReady` polyfill exists because Astro bundles `<script>` tags as separate modules — they may resolve in arbitrary order, and the consent layer's bundle might not have run yet when another bundle tries to subscribe.
+
+## When NOT to bypass `<PrivionScript>`
+
+If your config is pure data (no callbacks, no class instances, no migrations with functions), `<PrivionScript>` is the simpler path. The "view-source debugging" benefit and the slightly cleaner Astro frontmatter are real wins for simple setups.
+
+The bypass pattern above is for when you genuinely need callbacks or class instances. Don't reach for it just because you can.
+
+## See also
+
+- [Astro quick start](/guides/quick-start/?tab=astro) — the basic `<PrivionScript>` path
+- [Backend sync](/guides/backend-sync/) — for `onSyncError` / `payloadTransform`
+- [Storage adapters](/guides/storage/) — for custom adapters

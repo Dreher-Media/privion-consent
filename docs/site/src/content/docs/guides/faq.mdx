@@ -1,0 +1,222 @@
+---
+title: FAQ
+description: Compliance scope, comparison with other libraries, and the questions that come up before adoption.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## General
+
+### What does this library do, in one sentence?
+
+Stores the user's consent decision, persists it across sessions, gates scripts and iframes until consent, and emits the right signals to Google Consent Mode v2.
+
+### What does it not do?
+
+- Provide legal text (banner copy, privacy policy) — you write those.
+- Resolve the user's region (no built-in geo database) — you pass it in.
+- Run a consent-audit backend — it POSTs to *your* endpoint.
+- Implement IAB TCF v2.2 — not in v1.x; on the roadmap.
+- Categorize trackers automatically — you map them to categories.
+
+The library is intentionally **mechanism, not policy**. Legal determinations and infrastructure are on you.
+
+### Is it really MIT-licensed and free?
+
+Yes. Source on [GitHub](https://github.com/Dreher-Media/privion-consent), packages on npm under `@privion-consent/*`. No usage-based pricing, no premium tier, no SaaS dependency. The maintainer (Dreher.Media) uses it on their own client projects.
+
+### Who's behind it?
+
+Built and maintained by [Tobias Laufersweiler](https://github.com/TobiasLaufersweiler) at [Dreher.Media](https://github.com/Dreher-Media). It's the canonical consent layer used across their client work.
+
+## Compliance
+
+### Does using this library make my site GDPR-compliant?
+
+No — and no library can. Compliance is the combination of:
+
+- **Mechanism** (what this library provides): block tracking until consent, store the decision, allow withdrawal.
+- **Information** (your responsibility): clear banner copy, privacy policy explaining what each category does.
+- **Process** (your responsibility): how you handle data subject requests, train staff, document data flows.
+
+This library covers piece 1. Pieces 2 and 3 are organizational. Talk to a privacy lawyer in your jurisdiction for the full picture.
+
+### Is the default config GDPR-safe?
+
+The library doesn't ship a default config — you write one. A **conservative starting point** for EU traffic:
+
+```ts
+{
+  version: 1,
+  defaultRegionMode: 'opt-in',
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+    { id: 'analytics', label: 'Analytics' },     // no defaultStatus → 'unknown' → blocked
+    { id: 'marketing', label: 'Marketing' },     // no defaultStatus → 'unknown' → blocked
+  ],
+  googleConsentMode: { mode: 'basic' },          // no pre-consent GCM chatter
+}
+```
+
+This forces opt-in for everyone. As you scope down to specific regions or use cases, ask whether opt-out (analytics-by-default) is defensible for that audience.
+
+### Does the banner copy meet GDPR's "clear and plain language" requirement?
+
+You write the banner copy. The library only provides the mechanism. The bundled React i18n locales (`enLocale`, `deLocale`, etc.) provide a starting point that should be reviewed by your legal team for jurisdiction-specific phrasing.
+
+### Where do I store the consent log for audit?
+
+In your backend. Configure `backendSync` to POST every decision to an endpoint that writes to your database. See [Recipe: Sync consent to a backend](/recipes/backend-sync/) for a complete pattern including idempotency.
+
+### What about the right to withdraw consent?
+
+`consent.reset()` clears the stored decision and re-shows the banner. Wire it to a "Reset cookie preferences" link in your footer or privacy policy.
+
+```html
+<a href="#" onclick="window.__privionConsent.reset(); return false;">
+  Reset cookie preferences
+</a>
+```
+
+For the equally-easy-to-withdraw-as-to-give requirement (Article 7(3)), the preferences modal (opened by `[privion-open-preferences]`) needs to be reachable from somewhere persistent like the footer.
+
+### What about TTDSG §25?
+
+TTDSG §25 is essentially Germany's local implementation of ePrivacy Article 5(3). The library's mechanism (block-until-consent for non-essential storage and access) satisfies §25's technical requirements. The organizational piece (information notice, consent withdrawal, data subject rights) is on you.
+
+### Is the "opt-out" mode legal in the EU?
+
+Generally, no — non-essential cookies and storage require opt-in in the EU. The library's `opt-out` mode is provided for non-EU traffic where it's lawful (US, parts of Asia). Don't use `defaultRegionMode: 'opt-out'` for EU users. Use `regionRules` to pin EU countries to `opt-in`:
+
+```ts
+regionRules: {
+  AT: { mode: 'opt-in' }, BE: { mode: 'opt-in' }, /* ...every EU country... */
+},
+defaultRegionMode: 'opt-out', // for non-EU
+```
+
+### Does this work for California (CCPA) / other US state laws?
+
+CCPA / CPRA / Virginia / etc. mostly operate on an opt-OUT model with a "Do Not Sell or Share" link. The library supports this — render a "Do not sell my personal information" link that calls `consent.setCategory('marketing', 'denied', 'preferences')`. But the specific requirements (link text, placement, signal handling for Global Privacy Control) are jurisdiction-specific and not handled by the library directly.
+
+GPC support (`Sec-GPC` header → auto-deny marketing) is something you can wire up yourself in your engine init code:
+
+```ts
+const gpcDeny = navigator.globalPrivacyControl;
+const consent = createPrivionConsent({...});
+if (gpcDeny) {
+  consent.setCategory('marketing', 'denied', 'preferences'); // honors the signal
+}
+```
+
+## Comparison
+
+### How does this compare to CookieYes / Cookiebot / Osano / OneTrust?
+
+| Feature                       | Privion             | Hosted SaaS                |
+| ----------------------------- | ------------------- | -------------------------- |
+| Pricing                       | Free (MIT)          | Tiered, usage-based        |
+| External script               | None — self-hosted  | Required (`cookieyes.com`, etc.) |
+| Vendor scanning               | Manual              | Automated                  |
+| Audit dashboard               | Build your own      | Hosted                     |
+| TCF v2.2 vendor signaling     | Not in v1           | Yes                        |
+| Source-available              | Yes                 | Mostly no                  |
+| Performance impact            | ~25KB total gzipped | 50–200KB hosted bundle     |
+| TypeScript / framework fit    | Native              | Generic JS                 |
+| Updates                       | Manual (npm)        | Automatic (vendor pushes)  |
+
+Pick a SaaS if you need vendor scanning, hosted dashboards, or TCF support. Pick Privion if you want zero external dependencies and source-available code.
+
+### How does it compare to Klaro!?
+
+Klaro! is the closest spiritual match — open-source, headless-ish, multi-framework. Differences:
+
+- **TypeScript-first.** Privion ships types with every package; Klaro's typings are community-maintained.
+- **Native bindings.** Klaro is a single JS library; Privion has dedicated React and Astro packages with hooks/components.
+- **Google Consent Mode v2.** Privion has first-class GCM v2 support (basic/advanced modes correct); Klaro has community plugins.
+- **Backend sync.** Built into Privion's core; not in Klaro.
+- **Late injection.** Privion uses `MutationObserver` to handle SPA hydration; Klaro requires a re-init.
+
+If you're on a TypeScript / React / Astro stack and want first-class types + framework ergonomics, Privion fits. If you're on plain JS and need TCF, Klaro is a strong choice.
+
+### Why not just roll my own?
+
+Reasonable for very simple cases — block one script behind one toggle. But once you have:
+- Multiple categories with different storage backends
+- Region-aware defaults
+- Google Consent Mode v2 with the correct default/update sequencing
+- SPA route teardown
+- Backend audit POSTs with retries
+- TypeScript types for state and config
+
+…you've basically built this library. The total source for `@privion-consent/core` + `@privion-consent/dom` is around 1500 lines of TypeScript, with 130+ tests. Reasonable to take vs. write.
+
+## Technical
+
+### Bundle size?
+
+Tarball sizes on npm:
+
+- `@privion-consent/core` — 16KB unpacked, ~9KB gzipped JS
+- `@privion-consent/dom` — 12KB unpacked, ~6KB gzipped JS, +1KB styles.css (gzipped)
+- `@privion-consent/react` — 20KB unpacked, ~7KB gzipped JS (excluding React peer)
+- `@privion-consent/astro` — 8KB unpacked, ~3KB gzipped JS
+
+Total for a vanilla setup: ~15KB gzipped. For a React setup: ~16KB gzipped (React peer not counted).
+
+### Does it work without a build step?
+
+`@privion-consent/core` and `@privion-consent/dom` ship as ES modules and can be loaded directly from a CDN:
+
+```html
+<script type="module">
+  import { createPrivionConsent } from 'https://esm.sh/@privion-consent/core';
+  import { initPrivionDom } from 'https://esm.sh/@privion-consent/dom';
+  // ...
+</script>
+```
+
+`@privion-consent/react` and `@privion-consent/astro` assume a bundler.
+
+### What browsers are supported?
+
+ES2020-compatible: Chrome 80+, Firefox 74+, Safari 13.1+, Edge 80+. No IE 11 support. The library uses `Map`, `Set`, optional chaining, nullish coalescing, native `fetch`, and `MutationObserver` — all baseline web platform.
+
+### Does it run on the server?
+
+`@privion-consent/core` does (no DOM dependencies). `@privion-consent/dom` doesn't — it references `document` / `MutationObserver`. `@privion-consent/react` doesn't directly, but `<ConsentProvider>` is SSR-safe (renders children without the engine on the server, hydrates client-side).
+
+`@privion-consent/astro/server` is server-only by design — `resolveRegion(headers)` reads CDN headers in middleware / SSR contexts.
+
+### Does it work in React Native?
+
+The core engine does. The DOM adapter doesn't (no DOM). You'd build a React Native shim that wires `setCategory` to your native UI. Not officially supported but the engine itself is portable.
+
+### Is the storage encrypted?
+
+No. Stored state is plaintext JSON in a cookie / localStorage. The data is not sensitive (it's the user's own consent decision), and encryption would require key management which isn't appropriate at this layer.
+
+If you have a regulatory requirement to encrypt consent state at rest in the browser, implement a custom `ConsentStorageAdapter` that wraps Web Crypto.
+
+## Roadmap
+
+### What's coming after 1.x?
+
+Themes for post-1.x consideration (in rough order):
+
+- **IAB TCF v2.2 vendor signaling** — currently the biggest gap for ad-tech-heavy sites.
+- **Async storage adapters** — for IndexedDB-first projects where the sync constraint is painful.
+- **Region database as a separate optional package** — `@privion-consent/regions` with curated EU/EEA/UK/CH rules so consumers don't have to maintain their own list.
+- **Cross-tab sync** — `storage` event listener so two tabs with the same domain stay in sync.
+
+None of these are committed. The roadmap responds to consumer feedback; [open an issue](https://github.com/Dreher-Media/privion-consent/issues) if you want to push something up the list.
+
+### Will the API stay stable?
+
+Yes. 1.x follows [semver](https://semver.org/) — no breaking changes within the major. Breaking changes will ship as 2.0 with a `MIGRATION.md` entry covering the diff. See the [stability promise](/reference/migration/#stability-promise).
+
+## See also
+
+- [Quick start](/guides/quick-start/) — get a working setup
+- [Specification](/reference/specification/) — the formal contract
+- [Troubleshooting](/guides/troubleshooting/) — when things don't work

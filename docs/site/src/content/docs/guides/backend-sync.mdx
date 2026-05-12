@@ -1,0 +1,260 @@
+---
+title: Backend sync
+description: POST every consent decision to your audit endpoint with retries, structured errors, and a custom payload shape.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Most regulators expect an audit trail of consent decisions. The library doesn't provide a backend — that's your infrastructure — but it does provide a robust client that POSTs every state change to your endpoint with retries.
+
+```ts
+createPrivionConsent({
+  // ...
+  backendSync: {
+    endpoint: '/api/consent',
+  },
+});
+```
+
+That's enough to start. With no further config the library POSTs JSON with up to 3 retries on transient failures.
+
+## Configuration
+
+```ts
+interface BackendSyncConfig {
+  endpoint: string;
+  method?: 'POST' | 'PUT';                   // default 'POST'
+  headers?: Record<string, string>;
+  includeIp?: boolean;
+  includeUserAgent?: boolean;
+  retries?: number;                          // default 3
+  retryBaseDelayMs?: number;                 // default 200
+  payloadTransform?: (state: ConsentState) => unknown;
+  onSyncError?: (error: BackendSyncError) => void;
+}
+```
+
+## Default payload
+
+```json
+{
+  "categories": { "necessary": "granted", "analytics": "granted" },
+  "version": 1,
+  "updatedAt": "2026-05-12T10:00:00.000Z",
+  "source": "banner",
+  "userDecided": true,
+  "userAgent": "Mozilla/5.0..."
+}
+```
+
+`userAgent` is included only when `includeUserAgent: true` is set. `includeIp: true` is currently a no-op — clients can't read their own IP. Your server typically logs it from the request itself.
+
+## Custom payloads
+
+`payloadTransform` reshapes the body. Useful for backends that expect a specific envelope, additional metadata, or a different schema:
+
+```ts
+backendSync: {
+  endpoint: '/api/v2/consent',
+  payloadTransform: (state) => ({
+    apiVersion: '2.0',
+    timestamp: Date.now(),
+    user: { id: getCurrentUserId() },
+    consent: {
+      categories: state.categories,
+      version: state.version,
+      decided: state.userDecided,
+    },
+  }),
+}
+```
+
+The transformer runs once per attempt. Heavy computation is fine; it doesn't block the engine.
+
+## Retry policy
+
+| Failure         | Behavior                                                  |
+| --------------- | --------------------------------------------------------- |
+| Network error   | retry with exponential backoff (200, 400, 800 ms by default) |
+| HTTP 5xx        | retry with exponential backoff                            |
+| HTTP 4xx        | no retry — treated as permanent client error              |
+| HTTP 2xx        | success                                                   |
+
+Total attempts = `retries + 1`. Tune for your backend:
+
+```ts
+backendSync: {
+  endpoint: '/api/consent',
+  retries: 5,                  // up to 6 total attempts
+  retryBaseDelayMs: 500,       // 500ms, 1000ms, 2000ms, 4000ms, 8000ms
+}
+```
+
+<Aside type="tip" title="Why no retries for 4xx?">
+  A 400 or 422 means *your code* is wrong — bad payload shape, missing auth, etc. Retrying won't fix it, just floods your logs. The library reports the failure via `onSyncError` so you can observe and fix.
+</Aside>
+
+## Error reporting
+
+Every failed attempt — including each retry — calls `onSyncError`:
+
+```ts
+interface BackendSyncError {
+  endpoint: string;
+  attempt: number;          // 1-indexed
+  totalAttempts: number;    // retries + 1
+  cause: 'network' | 'http';
+  status?: number;          // present when cause === 'http'
+  statusText?: string;
+  error?: unknown;          // present when cause === 'network'
+}
+```
+
+Wire straight into your error reporter:
+
+<Tabs syncKey="reporter">
+<TabItem label="Sentry">
+
+```ts
+import * as Sentry from '@sentry/browser';
+
+backendSync: {
+  endpoint: '/api/consent',
+  onSyncError: (err) => {
+    Sentry.captureException(new Error(`consent sync ${err.cause}`), {
+      contexts: { consent_sync: err },
+      tags: { consent_endpoint: err.endpoint, attempt: err.attempt },
+    });
+  },
+}
+```
+
+</TabItem>
+<TabItem label="Custom logger">
+
+```ts
+backendSync: {
+  endpoint: '/api/consent',
+  onSyncError: (err) => {
+    if (err.attempt === err.totalAttempts) {
+      // Final failure — log loud
+      console.error('[consent] sync failed after all retries', err);
+      yourLogger.error('consent_sync_exhausted', err);
+    } else {
+      // Intermediate retry — log soft
+      console.warn(`[consent] sync attempt ${err.attempt}/${err.totalAttempts} failed`, err);
+    }
+  },
+}
+```
+
+</TabItem>
+<TabItem label="Filtered">
+
+Only report final failures (after all retries):
+
+```ts
+backendSync: {
+  endpoint: '/api/consent',
+  onSyncError: (err) => {
+    if (err.attempt < err.totalAttempts) return; // ignore intermediate
+    if (err.cause === 'http' && err.status === 401) return; // expected
+    captureException(err);
+  },
+}
+```
+
+</TabItem>
+</Tabs>
+
+The library **never throws** on sync failures. The engine continues normally even if every attempt fails — `onSyncError` is the only signal. Plan accordingly.
+
+## Authentication
+
+`headers` is your hook:
+
+```ts
+backendSync: {
+  endpoint: '/api/consent',
+  headers: {
+    'X-API-Key': process.env.PUBLIC_CONSENT_API_KEY,
+    'X-Tenant-ID': window.location.hostname,
+  },
+}
+```
+
+For per-request auth (signed requests, fresh tokens), wrap the engine's storage in a custom adapter that intercepts the save and POSTs from your own code, or override the global `fetch` if you're feeling brave. We don't expose a per-request header hook because that would couple the engine to your auth flow.
+
+## Triggers
+
+The engine calls `syncToBackend` whenever `applyChange` runs — that's on:
+- `setCategory` / `setMany` (whether triggered by UI or programmatically)
+- `acceptAll` / `rejectAll`
+
+Notably, **not on `reset()`**. Reset clears storage and emits the `reset` event, but doesn't POST. If you want to log resets, subscribe to the event and POST manually:
+
+```ts
+consent.on('reset', (state) => {
+  fetch('/api/consent/reset', { method: 'POST', body: JSON.stringify(state) });
+});
+```
+
+## Common patterns
+
+### Server-resolved user identity
+
+The library doesn't know who the user is. Inject identity in `payloadTransform`:
+
+```ts
+const userId = getCurrentUserId();
+
+backendSync: {
+  endpoint: '/api/consent',
+  payloadTransform: (state) => ({ userId, ...defaultPayload(state) }),
+}
+
+function defaultPayload(state: ConsentState) {
+  return {
+    categories: state.categories,
+    version: state.version,
+    updatedAt: state.updatedAt,
+    source: state.source,
+    userDecided: state.userDecided,
+  };
+}
+```
+
+If `userId` changes (login / logout), construct a new engine — the engine doesn't pick up changes to closure-captured values automatically.
+
+### Audit-only POSTs (no real-time UI feedback)
+
+If you need to log every change but don't care whether the server got it (because consent is enforced client-side anyway), the default config is exactly what you want — fire and forget with retries.
+
+### Server-authoritative consent
+
+If your server is the source of truth (e.g. logged-in users have consent stored centrally), `backendSync` alone isn't enough — you also need to *load* server state into the engine on init. Pattern:
+
+```ts
+// 1. Fetch the user's saved consent from your server
+const serverState = await fetch('/api/consent').then((r) => r.json());
+
+// 2. Construct the engine with localStorage + a payloadTransform that adds userId
+const consent = createPrivionConsent({
+  // ...
+  storage: { type: 'localStorage' },
+  backendSync: { endpoint: '/api/consent', payloadTransform: yourTransform },
+});
+
+// 3. Seed the engine from the server response (skipping the banner)
+if (serverState.userDecided) {
+  consent.setMany(serverState.categories, 'preferences');
+}
+```
+
+The `'preferences'` source flips `userDecided: true` and dismisses the banner. The matching `update` POST goes back to your server, but it's idempotent — server data POSTed back to the server is a no-op.
+
+## Reference
+
+- [API reference — `BackendSyncConfig` / `BackendSyncError`](/reference/api/#backend-sync)
+- [Specification §8 — Backend sync](/reference/specification/#backend-sync)
+- [Recipe: Sync consent decisions to a backend](/recipes/backend-sync/)

@@ -1,0 +1,113 @@
+---
+title: SPA route teardown
+description: Cleanly destroy the consent layer when the user navigates between routes in a single-page app.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## When this matters
+
+In a single-page app where the consent layer mounts inside a route component (not at the app root), navigating away leaves dangling listeners and MutationObservers unless you call `dom.destroy()`. Symptoms of skipping teardown:
+
+- New banners appear when they shouldn't (multiple engines responding to the same DOM mutation).
+- `consent.on('update', ...)` callbacks fire twice (once per stale engine).
+- Memory grows on every navigation (`MutationObserver` retains the document root).
+
+If the consent layer is mounted **at the app root** and never unmounted, you don't need this — the engine lives for the lifetime of the page. The pattern below applies when you choose to scope consent to specific routes (rare, but legitimate).
+
+## React / Vite
+
+The hook-based bindings handle teardown automatically when `<ConsentProvider>` unmounts. But if you're constructing the engine manually:
+
+```tsx
+import { useEffect } from 'react';
+import { createPrivionConsent } from '@privion-consent/core';
+import { initPrivionDom } from '@privion-consent/dom';
+
+function ConsentLayer() {
+  useEffect(() => {
+    const consent = createPrivionConsent({ /* ... */ });
+    const dom = initPrivionDom(consent);
+
+    return () => {
+      dom.destroy();
+      // No "consent.destroy()" — the engine has no resources to release.
+      // GC reclaims it when nothing holds a reference.
+    };
+  }, []);
+
+  return null;
+}
+```
+
+## React Router
+
+```tsx
+import { Route } from 'react-router';
+
+<Route path="/consent-required" element={<ConsentLayer />}>
+  <Route path="*" element={<App />} />
+</Route>;
+```
+
+The `useEffect` cleanup runs on unmount when the route changes.
+
+## Astro view-transitions
+
+Astro 4's view-transitions API replaces the page DOM between navigations. The consent layer mounted by `<PrivionScript>` is torn down by the framework — but you should re-init it on the new page if the new layout includes a banner.
+
+```astro
+---
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+---
+<head>
+  <PrivionScript config={config} />
+</head>
+```
+
+For pages without `<PrivionScript>`, the previous engine is gone but `window.__privionConsent` may still hold a reference to the destroyed engine. Subscribers should check on every page:
+
+```ts
+document.addEventListener('astro:page-load', () => {
+  if (window.__privionConsent) {
+    window.__privionConsent.on('update', /* ... */);
+  }
+});
+```
+
+## Vanilla / multi-engine
+
+Don't construct multiple engines on the same page. The DOM adapter caches state on `consent._privionDomHandlers` and a second engine will fight the first for control of the banner. If you need to "swap" the config (rare), destroy then re-construct:
+
+```ts
+let consent = createPrivionConsent(config1);
+let dom = initPrivionDom(consent);
+
+// Later, want to switch to a different config:
+dom.destroy();
+consent = createPrivionConsent(config2);
+dom = initPrivionDom(consent);
+```
+
+<Aside type="caution" title="`consent.reset()` ≠ `dom.destroy()`">
+  `reset()` clears the stored decision but keeps the engine alive. `destroy()` tears down the DOM adapter without touching stored state. They're orthogonal:
+
+  - To clear consent: `consent.reset()`
+  - To remove all DOM listeners: `dom.destroy()`
+  - To do both: call both
+</Aside>
+
+## What `dom.destroy()` actually does
+
+From the source ([`packages/consent-dom/src/index.ts`](https://github.com/Dreher-Media/privion-consent/blob/main/packages/consent-dom/src/index.ts)):
+
+1. Disconnects the `MutationObserver` watching for late-injected `[type="privion"]` / `[privion-category]` / `[privion]` elements.
+2. Unsubscribes the script / iframe / visibility / UI handlers from engine events.
+3. Clears tracked element maps so already-registered scripts aren't double-processed if a new adapter is attached.
+
+It does **not** roll back already-activated scripts or restore `iframe.src` to `about:blank`. Activation is one-shot and irreversible by design — see [Attribute schema — Script gating](/reference/attribute-schema/#script-gating) for the rationale.
+
+## See also
+
+- [API — `PrivionDomHandle`](/reference/api/#initpriviondom)
+- [Troubleshooting — banner appears twice](/guides/troubleshooting/#banner-appears-twice-after-route-change)

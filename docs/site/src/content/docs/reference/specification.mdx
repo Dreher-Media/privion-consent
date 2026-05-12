@@ -1,0 +1,352 @@
+---
+title: Specification
+description: The canonical contract — compliance scope, data model, attribute schema, GCM rules, storage, backend sync.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This page is the **contract**. Everything documented here is part of the v1.x public surface; breaking changes follow [semver](https://semver.org/) and ship with a [Migration guide](/reference/migration/) entry.
+
+The narrative guides (left sidebar) explain the *why* and walk through usage. This page enumerates the *what*.
+
+## Compliance scope
+
+The library targets sites and apps subject to:
+
+- **GDPR** (EU 2016/679), Articles 6 & 7 — lawful basis and the requirements for valid consent.
+- **ePrivacy Directive** (2002/58/EC), Article 5(3) — the "cookie consent" rule for storing or accessing information on a user's device.
+- **TTDSG** §25 (Germany) — the German implementation of Article 5(3); relevant for the DE market because it tightens enforcement.
+
+The library provides the **mechanism**:
+- state model for what's consented to
+- persistence (cookie / localStorage / pluggable)
+- script & iframe gating via attribute schema
+- UI hooks for banner / preferences flows
+- Google Consent Mode v2 protocol bridge
+- backend sync for audit logging
+
+What's explicitly **not** in scope:
+- Legal-text bundles (banner copy, privacy policy text) — the host writes these.
+- Geo databases — the host resolves the user's region; the library applies rules.
+- IAB TCF v2.2 vendor support — separate framework, on the post-v1 roadmap.
+- A consent-log backend — the host operates the endpoint; the library POSTs to it.
+
+The split: **mechanism here, determinations and infrastructure there.**
+
+## Data model
+
+### `ConsentStatus`
+
+```ts
+type ConsentStatus = 'granted' | 'denied' | 'unknown';
+```
+
+`unknown` is "user has not been asked yet" — distinct from `denied`. Treat as not-consented for operational decisions but surface the banner so the user can decide.
+
+### `ConsentSource`
+
+```ts
+type ConsentSource = 'banner' | 'preferences' | 'api';
+```
+
+Records why the most recent change happened. UI handlers pass `'banner'` / `'preferences'`; programmatic calls default to `'api'`.
+
+### `ConsentState`
+
+```ts
+interface ConsentState {
+  categories: Record<string, ConsentStatus>;
+  updatedAt: string;       // ISO 8601 timestamp
+  version: number;         // matches PrivionConsentConfig.version
+  source: ConsentSource;   // why the most recent change happened
+  userDecided: boolean;    // user has actively chosen via banner/preferences
+}
+```
+
+`userDecided` is the canonical signal for "should we still show the banner?". It is set to `true` only when source is `'banner'` or `'preferences'`. Programmatic API calls (e.g. a host app pre-seeding from server-side data) do **not** flip it.
+
+### `PrivionConsentConfig`
+
+```ts
+interface PrivionConsentConfig {
+  version: number;
+  categories: ConsentCategoryConfig[];
+  region?: string;                                       // ISO 3166-1 alpha-2
+  regionRules?: Record<string, { mode: RegionMode }>;
+  defaultRegionMode?: RegionMode;
+  storage?: StorageConfig | ConsentStorageAdapter;
+  googleConsentMode?: { mode: 'basic' | 'advanced' };
+  backendSync?: BackendSyncConfig;
+  migrations?: ConsentMigration[];
+}
+```
+
+`version` is host-controlled. Bumping it invalidates stored consent unless a migration covers the gap.
+
+## Attribute schema (DOM adapter)
+
+Framework-agnostic. The adapter watches the DOM via `MutationObserver` so elements injected after `initPrivionDom(...)` (SPA hydration, async-loaded markup, framework islands) are picked up automatically.
+
+`initPrivionDom` returns a `PrivionDomHandle`; `handle.destroy()` disconnects every observer and clears tracked element maps.
+
+### Script gating
+
+```html
+<script type="privion" privion-category="analytics" src="..."></script>
+```
+
+- `type="privion"` makes the script non-executable until activation.
+- `privion-category` lists the categories required (comma- or space-separated).
+- On activation: a new `<script>` element with copies of `src`, `textContent`, `async`, `defer`, `nonce`, `crossOrigin` is inserted after the original. Activation is one-shot.
+
+### Iframe gating
+
+```html
+<iframe privion-category="marketing" privion-src="https://..." src="about:blank"></iframe>
+```
+
+- Render with `src="about:blank"`; real URL in `privion-src`.
+- On activation: `iframe.src = realSrc`. One-shot.
+
+### Visibility
+
+```html
+<div privion="analytics">visible if analytics granted</div>
+<div privion="!marketing">visible if marketing NOT granted</div>
+<div privion="analytics,!marketing">visible if both conditions hold</div>
+```
+
+Expression: comma- or space-separated tokens. Positive tokens require granted; `!category` requires not-granted. Original `style.display` restored when visible.
+
+### UI hooks
+
+```html
+<div privion-banner hidden>...</div>
+<div privion-preferences hidden>...</div>
+
+<button privion-accept-all>Accept all</button>
+<button privion-reject-all>Reject all</button>
+<button privion-open-preferences>Customize</button>
+<button privion-save-preferences>Save</button>
+
+<input type="checkbox" privion-toggle="analytics" />
+<input type="checkbox" privion-required="necessary" disabled checked />
+```
+
+- `[privion-banner]` unhidden iff `state.userDecided === false`.
+- `[privion-preferences]` un-hidden by `[privion-open-preferences]` click.
+- `[privion-accept-all]` / `[privion-reject-all]` call the engine methods and hide both containers.
+- `[privion-save-preferences]` collects every `[privion-toggle]`, calls `setMany(updates, 'preferences')`.
+- `[privion-required]` auto-disabled and force-checked.
+
+## Event lifecycle
+
+```text
+                          ┌─── update ←─── setCategory / setMany
+                          │
+construct ──→ ready ──────┤
+                          ├── update + accept_all   (acceptAll())
+                          ├── update + reject_all   (rejectAll())
+                          └── reset                  (reset() — does NOT emit update)
+```
+
+- `ready` fires once per engine instance, synchronously inside the constructor.
+- `update` fires on every `setCategory` / `setMany` that actually changed state, plus inside `acceptAll` / `rejectAll`.
+- `accept_all` / `reject_all` fire **after** `update`, with the same final state.
+- `reset` does not fire `update`.
+
+Errors thrown from handlers are caught and `console.error`'d — one bad listener can't break another.
+
+## Google Consent Mode v2
+
+### Mode semantics
+
+| Mode       | First load (new visitor)             | First load (returning, `userDecided=true`) | Subsequent changes |
+| ---------- | ------------------------------------ | ------------------------------------------ | ------------------ |
+| `basic`    | (nothing emitted)                    | `update`                                   | `update`           |
+| `advanced` | `default` with all-denied mapping    | `update`                                   | `update`           |
+
+### Default mapping
+
+| Category id | GCM fields set to `granted` when category granted |
+| ----------- | -------------------------------------------------- |
+| `analytics` | `analytics_storage`                                |
+| `marketing` | `ad_storage`, `ad_user_data`, `ad_personalization` |
+| anything else | (no default — declare per-category)              |
+
+Per-category overrides via `ConsentCategoryConfig.googleMapping`.
+
+### Transport
+
+```text
+1. window.gtag           →  gtag('consent', command, mapping)
+2. window.dataLayer      →  dataLayer.push({ event: 'consent_' + command, ...mapping })
+3. CustomEvent           →  dispatchEvent('privion:google-consent-mode', { command, mapping, mode })
+```
+
+## Region & defaults
+
+```ts
+type RegionMode = 'opt-in' | 'opt-out';
+```
+
+For an `opt-in` region, categories without `defaultStatus` start as `'unknown'` (banner forced). For `opt-out`, they start as `'granted'`. Per-category `defaultStatus` overrides the regional fallback.
+
+Resolution priority for the effective mode:
+1. `config.regionRules[config.region]` if both are set.
+2. `config.defaultRegionMode` otherwise.
+3. Implicit `'opt-in'` if nothing is configured.
+
+## Storage
+
+### Built-in adapters
+
+- **`CookieStorage`** (default) — `document.cookie`, key `privion-consent`, 365-day expiry. Configurable via `StorageConfig.cookieOptions`.
+- **`LocalStorageAdapter`** — `window.localStorage`, same default key.
+
+### Pluggable
+
+```ts
+interface ConsentStorageAdapter {
+  save(state: ConsentState): void;
+  load(): ConsentState | null;
+  clear(): void;
+}
+```
+
+Synchronous in v1 because the engine constructor needs the persisted state for the first banner-show decision. Async backends should buffer in memory and flush in `save`.
+
+### Versioning + migrations
+
+```ts
+interface ConsentMigration {
+  from: number;
+  to: number;
+  migrate: (old: ConsentState) => ConsentState;
+}
+```
+
+On engine construction:
+1. Stored version matches config version, all category ids valid → hydrate as-is.
+2. Stored version matches but a `userDecided`-less state is hydrated → `userDecided` inferred from `source` (banner/preferences → true).
+3. Stored version doesn't match → chain migrations forward through `[from, to]` pairs.
+4. No migration covers the gap → fall back to defaults.
+
+## Backend sync
+
+```ts
+interface BackendSyncConfig {
+  endpoint: string;
+  method?: 'POST' | 'PUT';                  // default 'POST'
+  headers?: Record<string, string>;
+  includeIp?: boolean;
+  includeUserAgent?: boolean;
+  retries?: number;                         // default 3
+  retryBaseDelayMs?: number;                // default 200
+  payloadTransform?: (state: ConsentState) => unknown;
+  onSyncError?: (error: BackendSyncError) => void;
+}
+```
+
+### Default payload
+
+```json
+{
+  "categories": { "necessary": "granted", "analytics": "granted" },
+  "version": 1,
+  "updatedAt": "2026-05-12T10:00:00.000Z",
+  "source": "banner",
+  "userDecided": true,
+  "userAgent": "..." // present only when includeUserAgent is true
+}
+```
+
+### Retry policy
+
+| Failure         | Behavior                                                  |
+| --------------- | --------------------------------------------------------- |
+| Network error   | retry with exponential backoff (`retryBaseDelayMs * 2^n`) |
+| HTTP 5xx        | retry with exponential backoff                            |
+| HTTP 4xx        | no retry — permanent client error                         |
+| HTTP 2xx        | success                                                   |
+
+Total attempts = `retries + 1`. Every failed attempt calls `onSyncError` with a structured `BackendSyncError`. The library never throws on sync failures.
+
+## Public API surface
+
+See the [full API reference](/reference/api/) for type signatures.
+
+```ts
+// @privion-consent/core
+export { PrivionConsent, createPrivionConsent, resolveRegionMode } from '@privion-consent/core';
+export {
+  ConsentStorageAdapter, CookieStorage, LocalStorageAdapter,
+  isStorageAdapter, resolveStorage, ConsentStorage,
+} from '@privion-consent/core';
+export { computeGoogleConsentMode, syncGoogleConsentMode } from '@privion-consent/core';
+export type {
+  ConsentStatus, ConsentSource, ConsentState, ConsentEvent,
+  ConsentCategoryConfig, ConsentMigration, GoogleConsentMapping,
+  StorageConfig, BackendSyncConfig, BackendSyncError,
+  PrivionConsentConfig, RegionMode,
+} from '@privion-consent/core';
+
+// @privion-consent/dom
+export { initPrivionDom, type PrivionDomHandle } from '@privion-consent/dom';
+import '@privion-consent/dom/styles.css'; // optional
+
+// @privion-consent/react
+export {
+  ConsentProvider, ConsentBanner, ConsentPreferences, ConsentErrorBoundary,
+  useConsent, useConsentI18n, useConsentCategory,
+  enLocale, deLocale, frLocale, esLocale, mergeI18n,
+  type ConsentI18n,
+} from '@privion-consent/react';
+
+// @privion-consent/astro (path-based imports for components)
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
+import CategoryToggle from '@privion-consent/astro/CategoryToggle.astro';
+export {
+  resolveRegion, DEFAULT_REGION_HEADERS, DEFAULT_IGNORED_REGION_VALUES,
+  type ResolveRegionOptions,
+} from '@privion-consent/astro/server';
+export { bootPrivion, readSerializedConfig } from '@privion-consent/astro/boot';
+```
+
+## Default styles (opt-in)
+
+```ts
+import '@privion-consent/dom/styles.css';
+```
+
+Single stylesheet covering both attribute conventions. Themable via CSS custom properties (`--privion-bg`, `--privion-fg`, `--privion-accent`, `--privion-radius`, …). Honors `prefers-color-scheme: dark` automatically; manual override via `<html data-privion-theme="dark">`.
+
+See [Default styles](/reference/styles/) for the full token list.
+
+## Astro support
+
+Three pieces:
+
+1. **`<PrivionScript config={...}>`** — head-script that serializes the config as JSON and boots the engine + DOM adapter client-side. Instance attached to `window.__privionConsent`.
+2. **Native `.astro` components** — `<ConsentBanner>`, `<ConsentPreferences>`, `<CategoryToggle>`. SSR-rendered with `hidden`; DOM adapter unhides them on `ready` if undecided.
+3. **`resolveRegion(headers)`** — server helper reading CDN headers (Cloudflare, Vercel, Netlify, App Engine). Returns uppercase ISO code or `undefined`.
+
+Peer-dep range on Astro is `^4.16.0 || ^5.0.0` — both major lines supported, CI-tested per PR via `astro-compat.yml`.
+
+## Versioning
+
+| Bump type | When                                                       | Process                                      |
+| --------- | ---------------------------------------------------------- | -------------------------------------------- |
+| Patch     | Bug fixes, perf, internal refactors with no API change     | `fix:` commit → release-please patch PR      |
+| Minor     | Additive API, opt-in features, new locales                 | `feat:` commit → release-please minor PR     |
+| Major     | Breaking changes                                           | `feat!:` commit + `MIGRATION.md` entry        |
+
+Internal `workspace:*` deps bump together via release-please's `node-workspace` plugin. Upgrading one Privion package typically means upgrading all four to the same minor line.
+
+## Source
+
+The implementation lives at [github.com/Dreher-Media/privion-consent](https://github.com/Dreher-Media/privion-consent). Code, tests, and types are the source of truth — this document narrates them.
+
+The full [SPECIFICATION.md](https://github.com/Dreher-Media/privion-consent/blob/main/SPECIFICATION.md) in the repo carries the same content with the same section numbering.

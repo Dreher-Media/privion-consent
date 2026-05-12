@@ -1,0 +1,244 @@
+---
+title: Data model
+description: ConsentStatus, ConsentSource, ConsentState, and the userDecided flag that drives the banner.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Every consent decision in the library is described by a few small types. Internalize these and the rest of the API stops surprising you.
+
+## ConsentStatus
+
+```ts
+type ConsentStatus = 'granted' | 'denied' | 'unknown';
+```
+
+| Status      | Meaning                                                                |
+| ----------- | ---------------------------------------------------------------------- |
+| `granted`   | User actively consented to this category.                              |
+| `denied`    | User actively rejected this category.                                  |
+| `unknown`   | User has not been asked yet.                                           |
+
+<Aside type="caution" title="`unknown` is not `denied`">
+  In code, treat `unknown` as **not consented** for operational decisions (don't load tracking scripts, don't fire pixels). But it differs from `denied` because the banner should still surface — the user has a decision to make. The DOM adapter respects this: an `unknown` category keeps `<script type="privion">` blocked AND keeps the banner visible.
+</Aside>
+
+## ConsentSource
+
+```ts
+type ConsentSource = 'banner' | 'preferences' | 'api';
+```
+
+Records *why* the most recent state change happened. UI handlers pass `'banner'` for Accept/Reject all clicks and `'preferences'` for Save in the preferences modal. Programmatic `setCategory(...)` and `setMany(...)` calls default to `'api'`.
+
+The source is what the engine emits on the `update` event. Listeners can branch on it:
+
+```ts
+consent.on('update', (state) => {
+  if (state.source === 'banner') {
+    analytics.track('consent_banner_used', state.categories);
+  }
+});
+```
+
+## ConsentState
+
+```ts
+interface ConsentState {
+  categories: Record<string, ConsentStatus>;
+  updatedAt: string;        // ISO 8601 timestamp
+  version: number;          // matches PrivionConsentConfig.version
+  source: ConsentSource;    // why the most recent change happened
+  userDecided: boolean;     // user has actively chosen via banner/preferences
+}
+```
+
+### The `userDecided` flag
+
+**This is the canonical signal for "should we still show the banner?".** It is `true` only after the user explicitly chooses via the banner or preferences modal. Programmatic API calls do *not* flip it.
+
+This matters when a host app pre-seeds categories from server-side data:
+
+```ts
+// Server says this user previously consented elsewhere; reflect that in state.
+consent.setCategory('analytics', 'granted'); // default source 'api'
+
+consent.getState().categories.analytics; // 'granted'
+consent.getState().userDecided;          // false — banner still shows
+```
+
+Then the user lands on the page, sees the banner, clicks "Accept all":
+
+```ts
+consent.acceptAll();
+
+consent.getState().userDecided; // true — banner hides
+```
+
+The banner stays visible until the user makes a real choice, even though the engine already knows the answer from server-side data.
+
+<Aside title="Why two flags?">
+  Earlier versions (0.x) used `state.source === 'api'` as a proxy for "not yet decided". Any programmatic call after a real decision would silently re-show the banner. Splitting `source` (why the last change happened) from `userDecided` (has a real decision been made) makes both signals reliable on their own.
+</Aside>
+
+## State diagram
+
+```text
+                                                  ┌─────────────────────┐
+                                                  │   userDecided=true  │
+                                                  │  banner hidden      │
+                                                  └─────────┬───────────┘
+                                                            │
+                          ┌──────────┐                      │ acceptAll()
+                          │ unknown  │     setCategory      │ rejectAll()
+                          │ (banner) │ ───────────────────▶ │ setMany(_, 'preferences')
+                          └─────┬────┘     source='api'     │
+                                │                           │
+                                │   acceptAll()             │
+                                │   rejectAll()             │
+                                └─────────▶ granted/denied ─┘
+                                            (userDecided=true)
+```
+
+Initial state on first visit is `unknown` for every optional category (assuming opt-in defaults). Programmatic `setCategory` mutates the category but leaves `userDecided: false`. Banner / preferences UI flows flip `userDecided: true` and hide the banner.
+
+## Configuration
+
+```ts
+interface PrivionConsentConfig {
+  version: number;
+  categories: ConsentCategoryConfig[];
+  region?: string;                                        // ISO 3166-1 alpha-2
+  regionRules?: Record<string, { mode: RegionMode }>;
+  defaultRegionMode?: RegionMode;                         // 'opt-in' | 'opt-out'
+  storage?: StorageConfig | ConsentStorageAdapter;
+  googleConsentMode?: { mode: 'basic' | 'advanced' };
+  backendSync?: BackendSyncConfig;
+  migrations?: ConsentMigration[];
+}
+
+interface ConsentCategoryConfig {
+  id: string;
+  label: string;
+  description?: string;
+  required?: boolean;
+  defaultStatus?: ConsentStatus;
+  googleMapping?: Partial<GoogleConsentMapping>;
+}
+```
+
+- **`version`** stamps the stored state. Bump it to invalidate previously-stored consent when categories change shape. See [Storage / migrations](/guides/storage/#migrations) for how to preserve consent across versions.
+- **`categories`** declares what the user can consent to. The `id` is referenced from `[privion-category]` / `[privion-toggle]` / `[privion]` attributes on the DOM side.
+- **`region` / `regionRules` / `defaultRegionMode`** — see [Regions & i18n](/guides/regions-i18n/).
+- **`storage`** — cookie (default), localStorage, or a custom adapter. See [Storage](/guides/storage/).
+- **`googleConsentMode`** — see [Google Consent Mode](/guides/google-consent-mode/).
+- **`backendSync`** — POST every state change to your endpoint. See [Backend sync](/guides/backend-sync/).
+- **`migrations`** — transform stored state across `version` bumps. See [Storage / migrations](/guides/storage/#migrations).
+
+## Persistence
+
+State is JSON-serialized to one of the configured storage backends. The default is a cookie at `privion-consent`. On engine construction:
+
+<Tabs syncKey="hydration-case">
+<TabItem label="Match">
+
+Stored version matches `config.version` and every stored category id is in `config.categories`. The state hydrates as-is.
+
+```ts
+// Stored: { categories: { necessary: 'granted', analytics: 'denied' }, version: 1, ... }
+// Config: version: 1, categories: [necessary, analytics, marketing]
+// → state.categories: { necessary: 'granted', analytics: 'denied', marketing: 'unknown' }
+```
+
+</TabItem>
+<TabItem label="Version mismatch">
+
+Stored version differs and no migration covers the gap. State falls back to defaults from `config.categories[*].defaultStatus` (or the regional fallback).
+
+```ts
+// Stored: { categories: { ... }, version: 1, ... }
+// Config: version: 2, no migrations
+// → state rebuilt from defaults; userDecided: false
+```
+
+Bump version on real category-shape changes (renames, removals). Use `config.migrations` to preserve consent.
+
+</TabItem>
+<TabItem label="Schema migration">
+
+Stored version is older but a `ConsentMigration` chain covers the gap. State is migrated forward through every step.
+
+```ts
+// Stored: version 1
+// Config: version 3, migrations [{ from: 1, to: 2, ... }, { from: 2, to: 3, ... }]
+// → migrations[0].migrate(stored) → migrations[1].migrate(intermediate)
+```
+
+See [Storage / migrations](/guides/storage/#migrations).
+
+</TabItem>
+</Tabs>
+
+## Reading state
+
+<Tabs syncKey="stack">
+<TabItem label="Vanilla / DOM">
+
+```ts
+const state = consent.getState();          // immutable snapshot
+const status = state.categories.analytics; // 'granted' | 'denied' | 'unknown'
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+import { useConsent, useConsentCategory } from '@privion-consent/react';
+
+function MyComponent() {
+  const { state } = useConsent();         // full state (re-renders on update)
+  const analytics = useConsentCategory('analytics');
+  return <p>Analytics: {analytics.status}</p>;
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Writing state
+
+<Tabs syncKey="stack">
+<TabItem label="Vanilla / DOM">
+
+```ts
+// Programmatic — userDecided stays false
+consent.setCategory('analytics', 'granted');
+
+// From a UI flow — userDecided flips to true
+consent.setCategory('analytics', 'granted', 'preferences');
+
+// Batched updates
+consent.setMany({ analytics: 'granted', marketing: 'denied' }, 'preferences');
+
+// Banner buttons (handled by the DOM adapter via [privion-accept-all] etc.)
+consent.acceptAll();
+consent.rejectAll();
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+const analytics = useConsentCategory('analytics');
+
+analytics.set('granted', 'preferences'); // userDecided=true
+analytics.set('granted');                // userDecided=false (programmatic)
+```
+
+</TabItem>
+</Tabs>
+
+## Next
+
+- [Event lifecycle](/guides/events/) — `ready`, `update`, `accept_all`, `reject_all`, `reset`.
+- [Attribute schema](/reference/attribute-schema/) — how the DOM adapter maps categories to the page.

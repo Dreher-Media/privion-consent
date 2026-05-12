@@ -1,12 +1,12 @@
 ---
 title: Privion Consent
-description: GDPR / ePrivacy consent management for vanilla JS, React, and Astro projects.
+description: GDPR / ePrivacy / TTDSG consent management for vanilla JS, React, and Astro — headless, region-aware, with Google Consent Mode v2.
 template: splash
 hero:
-  tagline: Headless, region-aware consent with Google Consent Mode v2 support — drop into vanilla pages, React apps, or Astro sites.
+  tagline: Headless consent UI. Region-aware defaults. Google Consent Mode v2. Drop into vanilla pages, React apps, or Astro sites.
   actions:
     - text: Get started
-      link: /guides/install/
+      link: /guides/quick-start/
       icon: right-arrow
       variant: primary
     - text: View on GitHub
@@ -14,13 +14,108 @@ hero:
       icon: external
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## See it in action
+
+<Tabs>
+<TabItem label="Vanilla JS">
+
+```html
+<!-- index.html -->
+<script type="privion" privion-category="analytics"
+  src="https://www.googletagmanager.com/gtag/js?id=G-XXX"></script>
+
+<div privion-banner hidden>
+  <p>We use cookies to improve your experience.</p>
+  <button privion-reject-all>Reject all</button>
+  <button privion-accept-all>Accept all</button>
+</div>
+
+<script type="module">
+  import { createPrivionConsent } from '@privion-consent/core';
+  import { initPrivionDom } from '@privion-consent/dom';
+
+  const consent = createPrivionConsent({
+    version: 1,
+    categories: [
+      { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+      { id: 'analytics', label: 'Analytics' },
+    ],
+    googleConsentMode: { mode: 'advanced' },
+  });
+
+  initPrivionDom(consent);
+</script>
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+// App.tsx
+import { ConsentProvider, ConsentBanner } from '@privion-consent/react';
+import '@privion-consent/dom/styles.css';
+
+export function App() {
+  return (
+    <ConsentProvider
+      config={{
+        version: 1,
+        categories: [
+          { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+          { id: 'analytics', label: 'Analytics' },
+        ],
+        googleConsentMode: { mode: 'advanced' },
+      }}
+    >
+      <YourApp />
+      <ConsentBanner />
+    </ConsentProvider>
+  );
+}
+```
+
+</TabItem>
+<TabItem label="Astro">
+
+```astro
+---
+// src/layouts/Layout.astro
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import { resolveRegion } from '@privion-consent/astro/server';
+import '@privion-consent/dom/styles.css';
+
+const config = {
+  version: 1,
+  region: resolveRegion(Astro.request.headers),
+  regionRules: { DE: { mode: 'opt-in' }, GB: { mode: 'opt-in' } },
+  defaultRegionMode: 'opt-out',
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+    { id: 'analytics', label: 'Analytics' },
+  ],
+};
+---
+
+<head>
+  <PrivionScript config={config} />
+</head>
+<body>
+  <slot />
+  <ConsentBanner />
+</body>
+```
+
+</TabItem>
+</Tabs>
 
 ## Why this library
 
 <CardGrid>
   <Card title="Headless by default" icon="puzzle">
-    The components emit `[privion-banner]` / `[data-privion-banner]` attributes and let your CSS take over. Opt into the bundled stylesheet for a working baseline, or ship your own.
+    Components emit `[privion-banner]` / `[data-privion-banner]` attributes and let your CSS take over. Opt into the bundled stylesheet for a working baseline.
   </Card>
   <Card title="Region-aware" icon="globe">
     Map ISO country codes to `opt-in` / `opt-out` defaults so EU / UK / CH visitors get the banner and the rest of the world doesn't — without shipping a geo database.
@@ -31,13 +126,55 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
   <Card title="Late-injection safe" icon="rocket">
     A `MutationObserver` re-scans the DOM for tagged scripts, iframes, and visibility-keyed elements after the initial mount — works in SPAs, Astro islands, and any framework that hydrates async.
   </Card>
+  <Card title="Backend sync" icon="cloud-download">
+    POST every state change to your audit endpoint. Exponential backoff for 5xx and network errors, structured `BackendSyncError` for observability.
+  </Card>
+  <Card title="Pluggable storage" icon="setting">
+    Cookie or localStorage out of the box. Plug a `ConsentStorageAdapter` for IndexedDB, React Native AsyncStorage, or a server-side store.
+  </Card>
 </CardGrid>
 
-## Packages
+## Picking a package
 
-| Package                                                                 | What it's for                                                   |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------- |
-| [`@privion-consent/core`](https://www.npmjs.com/package/@privion-consent/core)   | Framework-agnostic engine: state, storage, GCM, backend sync.   |
-| [`@privion-consent/dom`](https://www.npmjs.com/package/@privion-consent/dom)     | DOM adapter: script gating, iframe gating, visibility, UI hooks.|
-| [`@privion-consent/react`](https://www.npmjs.com/package/@privion-consent/react) | React provider, hooks, headless components, i18n.               |
-| [`@privion-consent/astro`](https://www.npmjs.com/package/@privion-consent/astro) | Astro components + SSR helpers (`resolveRegion`).               |
+<CardGrid>
+  <LinkCard
+    title="@privion-consent/core"
+    href="/reference/api/#privion-consentcore"
+    description="Framework-agnostic engine: state, storage, GCM, backend sync. Always required."
+  />
+  <LinkCard
+    title="@privion-consent/dom"
+    href="/reference/api/#privion-consentdom"
+    description="DOM adapter: script gating, iframe gating, visibility, UI hooks. Required for vanilla / Astro."
+  />
+  <LinkCard
+    title="@privion-consent/react"
+    href="/reference/api/#privion-consentreact"
+    description="Provider, hooks, headless components, i18n. For React apps."
+  />
+  <LinkCard
+    title="@privion-consent/astro"
+    href="/reference/api/#privion-consentastro"
+    description="Astro components + SSR helpers. For Astro projects."
+  />
+</CardGrid>
+
+<Aside type="tip" title="Not sure which to pick?">
+  Most consumers want **one** of `react` / `astro` / `dom` plus `core`. The
+  [installation guide](/guides/install/) has a decision tree.
+</Aside>
+
+## What it isn't
+
+To be clear about scope before you adopt:
+
+- **Not a legal-text provider.** You write the banner copy and privacy policy.
+- **No geo database.** You pass a region; we apply the rules.
+- **Not an IAB TCF v2.2 vendor.** TCF support is on the roadmap but not in 1.x.
+- **Not an audit-log backend.** We `POST` decisions to *your* endpoint with retries; you store them.
+
+The library provides the **mechanism**; legal determinations and infrastructure are on you. See [Compliance & scope](/reference/specification/#compliance-scope) for the GDPR / ePrivacy / TTDSG mapping.
+
+## Status
+
+v1.x is stable. The four published packages follow [semver](https://semver.org/); breaking changes are documented in the [Migration guide](/reference/migration/). The full contract is in the [Specification](/reference/specification/).
