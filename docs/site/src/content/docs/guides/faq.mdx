@@ -16,7 +16,7 @@ Stores the user's consent decision, persists it across sessions, gates scripts a
 - Provide legal text (banner copy, privacy policy) — you write those.
 - Resolve the user's region (no built-in geo database) — you pass it in.
 - Run a consent-audit backend — it POSTs to *your* endpoint.
-- Implement IAB TCF v2.2 — not in v1.x; on the roadmap.
+- Implement IAB TCF v2.2 — Privion is **not** a registered CMP. See [Do I need TCF?](#do-i-need-tcf-support) below.
 - Categorize trackers automatically — you map them to categories.
 
 The library is intentionally **mechanism, not policy**. Legal determinations and infrastructure are on you.
@@ -80,6 +80,34 @@ In your backend. Configure `backendSync` to POST every decision to an endpoint t
 
 For the equally-easy-to-withdraw-as-to-give requirement (Article 7(3)), the preferences modal (opened by `[privion-open-preferences]`) needs to be reachable from somewhere persistent like the footer.
 
+### Do I need TCF support?
+
+Almost certainly **no** for the use cases Privion targets — but it depends on whether your site runs programmatic advertising in the EU.
+
+**TCF (IAB Europe's Transparency & Consent Framework)** is a separate protocol from GDPR / ePrivacy. It standardizes consent signaling to the ~1,000 IAB-registered ad-tech vendors via a "TC String" cookie and a `__tcfapi` global. Google has required a TCF v2.2-compliant CMP for serving personalized ads in the EU since January 2024.
+
+**You need TCF if:**
+
+- You monetize via **Google Ad Manager**, **AdSense**, **AdMob** with EU traffic, or
+- You run **programmatic header-bidding** (Prebid + SSPs), or
+- You serve display ads via the **OpenRTB** ecosystem.
+
+**You don't need TCF if:**
+
+- You use only **Google Analytics** / Tag Manager (GCM v2 — which Privion supports — covers this).
+- You're a content / brochure / SaaS / e-commerce site without programmatic ads.
+- Your tracking is direct integrations (Meta Pixel, LinkedIn Insight, etc.) which have their own consent layers.
+
+**Why Privion doesn't implement TCF:**
+
+Becoming a registered CMP means:
+- IAB Europe CMP registration with an annual review fee (~€2–3k).
+- Separate Google CMP certification for serving Google ads.
+- Implementing the full TCF v2.2 spec — TC String codec, `__tcfapi` global, weekly-updated Global Vendor List, IAB-mandated UI patterns.
+- Ongoing maintenance: GVL changes weekly, spec evolves 1–2x/year.
+
+That's a separate product. Privion is a lightweight consent layer for the broader (non-ad-tech) use case — it covers GDPR / ePrivacy / TTDSG mechanism, GCM v2, region-aware defaults, and audit logging. For sites that need a real CMP, [CookieYes](https://www.cookieyes.com/), [Cookiebot](https://www.cookiebot.com/), [OneTrust](https://www.onetrust.com/), or [Klaro!](https://heyklaro.com/) (open-source, has community TCF support) are better fits.
+
 ### What about TTDSG §25?
 
 TTDSG §25 is essentially Germany's local implementation of ePrivacy Article 5(3). The library's mechanism (block-until-consent for non-essential storage and access) satisfies §25's technical requirements. The organizational piece (information notice, consent withdrawal, data subject rights) is on you.
@@ -119,7 +147,7 @@ if (gpcDeny) {
 | External script               | None — self-hosted  | Required (`cookieyes.com`, etc.) |
 | Vendor scanning               | Manual              | Automated                  |
 | Audit dashboard               | Build your own      | Hosted                     |
-| TCF v2.2 vendor signaling     | Not in v1           | Yes                        |
+| TCF v2.2 vendor signaling     | Not planned (see above) | Yes                    |
 | Source-available              | Yes                 | Mostly no                  |
 | Performance impact            | ~25KB total gzipped | 50–200KB hosted bundle     |
 | TypeScript / framework fit    | Native              | Generic JS                 |
@@ -204,7 +232,6 @@ If you have a regulatory requirement to encrypt consent state at rest in the bro
 
 Themes for post-1.x consideration (in rough order):
 
-- **IAB TCF v2.2 vendor signaling** — currently the biggest gap for ad-tech-heavy sites.
 - **Async storage adapters** — for IndexedDB-first projects where the sync constraint is painful.
 - **Region database as a separate optional package** — `@privion-consent/regions` with curated EU/EEA/UK/CH rules so consumers don't have to maintain their own list.
 - **Cross-tab sync** — `storage` event listener so two tabs with the same domain stay in sync.

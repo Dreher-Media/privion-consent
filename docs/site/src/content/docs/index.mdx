@@ -170,7 +170,7 @@ To be clear about scope before you adopt:
 
 - **Not a legal-text provider.** You write the banner copy and privacy policy.
 - **No geo database.** You pass a region; we apply the rules.
-- **Not an IAB TCF v2.2 vendor.** TCF support is on the roadmap but not in 1.x.
+- **Not an IAB TCF v2.2 CMP.** Privion doesn't implement the TCF protocol or register as an IAB CMP. If your site monetizes via Google Ad Manager / AdSense / programmatic display in the EU, you need a certified CMP — Privion isn't one and isn't planned to be. See [FAQ — Do I need TCF?](/guides/faq/#do-i-need-tcf-support).
 - **Not an audit-log backend.** We `POST` decisions to *your* endpoint with retries; you store them.
 
 The library provides the **mechanism**; legal determinations and infrastructure are on you. See [Compliance & scope](/reference/specification/#compliance-scope) for the GDPR / ePrivacy / TTDSG mapping.
