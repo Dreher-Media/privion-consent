@@ -1,0 +1,180 @@
+---
+title: Sync consent decisions to a backend
+description: Audit-log every consent change to your server with retries, structured errors, and user identity.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## Goal
+
+POST every consent state change to a server endpoint for audit logging. Include the current user's id, retry on transient failures, and report final failures to Sentry.
+
+## Minimal version
+
+```ts
+createPrivionConsent({
+  version: 1,
+  categories: [...],
+  backendSync: {
+    endpoint: '/api/consent',
+  },
+});
+```
+
+Default behavior: POST JSON with up to 3 retries on 5xx / network errors. 4xx is no-retry.
+
+## With user identity + error reporting
+
+```ts
+import * as Sentry from '@sentry/browser';
+
+const userId = getCurrentUserId(); // your auth layer
+
+createPrivionConsent({
+  version: 1,
+  categories: [...],
+  backendSync: {
+    endpoint: '/api/v2/consent',
+    method: 'POST',
+    headers: {
+      'X-Tenant': window.location.hostname,
+      // 'Authorization' set via cookie / fetch credentials by your server
+    },
+    includeUserAgent: true,
+    retries: 5,
+    retryBaseDelayMs: 500,
+    payloadTransform: (state) => ({
+      userId,
+      apiVersion: '2.0',
+      timestamp: Date.now(),
+      consent: {
+        categories: state.categories,
+        version: state.version,
+        updatedAt: state.updatedAt,
+        source: state.source,
+        decided: state.userDecided,
+      },
+    }),
+    onSyncError: (err) => {
+      if (err.attempt < err.totalAttempts) return; // skip intermediate
+      if (err.cause === 'http' && err.status === 401) return; // expected
+      Sentry.captureException(new Error(`consent sync ${err.cause}`), {
+        contexts: { consent_sync: err },
+        tags: { endpoint: err.endpoint, attempt: err.attempt },
+      });
+    },
+  },
+});
+```
+
+## Server endpoint shape
+
+The endpoint receives the JSON body produced by `payloadTransform` (or the default if you don't transform). Implement idempotency on the server — the same consent state may be posted multiple times during retries.
+
+<Tabs syncKey="backend-stack">
+<TabItem label="Express / Node">
+
+```ts
+import express from 'express';
+const app = express();
+app.use(express.json());
+
+app.post('/api/v2/consent', async (req, res) => {
+  const { userId, consent } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+
+  await db.consent_log.create({
+    user_id: userId,
+    state: consent,
+    received_at: new Date(),
+  });
+  res.status(204).end();
+});
+```
+
+</TabItem>
+<TabItem label="Cloudflare Worker">
+
+```ts
+export default {
+  async fetch(request: Request, env: Env) {
+    if (request.method !== 'POST') return new Response('', { status: 405 });
+
+    const body = await request.json();
+    if (!body.userId) return Response.json({ error: 'userId required' }, { status: 400 });
+
+    await env.DB.prepare(
+      'INSERT INTO consent_log (user_id, state, received_at) VALUES (?, ?, ?)',
+    )
+      .bind(body.userId, JSON.stringify(body.consent), new Date().toISOString())
+      .run();
+
+    return new Response('', { status: 204 });
+  },
+};
+```
+
+</TabItem>
+<TabItem label="Astro endpoint">
+
+```ts
+// src/pages/api/consent.ts
+import type { APIRoute } from 'astro';
+
+export const POST: APIRoute = async ({ request }) => {
+  const body = await request.json();
+  if (!body.userId) {
+    return new Response(JSON.stringify({ error: 'userId required' }), { status: 400 });
+  }
+
+  // ... your storage call ...
+
+  return new Response('', { status: 204 });
+};
+```
+
+</TabItem>
+</Tabs>
+
+## Schema for the consent_log table
+
+```sql
+CREATE TABLE consent_log (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  state JSONB NOT NULL,
+  received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  user_agent TEXT,
+  ip_address INET,
+  -- For deduplication if you care about it:
+  state_hash BYTEA GENERATED ALWAYS AS (digest(state::text, 'sha256')) STORED
+);
+CREATE INDEX consent_log_user_id_idx ON consent_log (user_id, received_at DESC);
+-- Optional: prevent storing duplicate consecutive states
+CREATE UNIQUE INDEX consent_log_user_state_idx ON consent_log (user_id, state_hash);
+```
+
+The unique index on `(user_id, state_hash)` makes the endpoint naturally idempotent — retries that resend the same state get `409 Conflict`, which is fine (the engine treats 4xx as terminal, no further retries).
+
+## Handling 4xx without spamming logs
+
+If your endpoint returns 401 for unauthenticated users (e.g. anonymous visitors), filter those out of error reporting:
+
+```ts
+onSyncError: (err) => {
+  if (err.cause === 'http' && err.status === 401) return; // expected for anon users
+  if (err.attempt < err.totalAttempts) return;            // skip intermediate retries
+  console.error('[consent] sync failed', err);
+  Sentry.captureException(err);
+}
+```
+
+## What you can NOT do
+
+- **Wait for the POST to complete before considering the consent committed.** `backendSync` is fire-and-forget; the engine emits `update` and applies the state change before `fetch` resolves. If you need server-authoritative consent (e.g. logged-in users have central consent), see the "Server-authoritative" pattern in [Backend sync — Common patterns](/guides/backend-sync/#common-patterns).
+- **Cancel an in-flight sync.** There's no cancellation hook in v1. If state changes again during a retry chain, both sets of retries run (the engine doesn't dedupe).
+
+## See also
+
+- [Backend sync guide](/guides/backend-sync/) — full configuration reference
+- [API — `BackendSyncConfig`](/reference/api/#backend-sync)

@@ -1,0 +1,148 @@
+---
+title: Block Google Analytics until consent
+description: A complete setup that gates GA / gtag.js behind the analytics category and emits GCM v2 signals.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## Goal
+
+Load `gtag.js` only after the user grants the analytics category. Emit the right `consent` calls so Google's modeled conversions still work for users who reject.
+
+## Result
+
+- New visitors see the banner, no GA traffic until they decide.
+- "Accept all" → `gtag('consent', 'update', { analytics_storage: 'granted' })` fires, GA loads, page-view logged.
+- "Reject all" → no GA traffic. `consent` event emits `denied` to dataLayer.
+- "Advanced" GCM mode (recommended): `gtag('consent', 'default', ...)` fires on init so cookieless pings are collected from undecided visitors too.
+
+## Setup
+
+<Tabs syncKey="stack">
+<TabItem label="Vanilla / Astro">
+
+```html
+<head>
+  <!-- 1. Style (optional) -->
+  <link rel="stylesheet" href="https://unpkg.com/@privion-consent/dom/dist/styles.css" />
+
+  <!-- 2. Initialize dataLayer + gtag stub. This MUST come BEFORE the privion script
+       so the engine's GCM bridge can push to dataLayer before gtag loads. -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){ dataLayer.push(arguments); }
+  </script>
+
+  <!-- 3. GA script — blocked until consent.analytics is granted -->
+  <script
+    type="privion"
+    privion-category="analytics"
+    src="https://www.googletagmanager.com/gtag/js?id=G-XXX"
+    async
+  ></script>
+
+  <!-- 4. GA config — also blocked until consent.analytics is granted -->
+  <script type="privion" privion-category="analytics">
+    gtag('js', new Date());
+    gtag('config', 'G-XXX');
+  </script>
+</head>
+<body>
+  <!-- Banner / preferences markup elided — see Quick start -->
+
+  <script type="module">
+    import { createPrivionConsent } from '@privion-consent/core';
+    import { initPrivionDom } from '@privion-consent/dom';
+
+    const consent = createPrivionConsent({
+      version: 1,
+      categories: [
+        { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+        { id: 'analytics', label: 'Analytics' },
+        { id: 'marketing', label: 'Marketing' },
+      ],
+      storage: { type: 'localStorage' },
+      googleConsentMode: { mode: 'advanced' }, // ← enables cookieless pings pre-consent
+    });
+
+    initPrivionDom(consent);
+  </script>
+</body>
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+// src/App.tsx
+import { ConsentProvider, ConsentBanner } from '@privion-consent/react';
+import '@privion-consent/dom/styles.css';
+import { Helmet } from 'react-helmet'; // or use Next.js <Script>
+
+const config = {
+  version: 1,
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' as const },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'marketing', label: 'Marketing' },
+  ],
+  storage: { type: 'localStorage' as const },
+  googleConsentMode: { mode: 'advanced' as const },
+};
+
+export function App() {
+  return (
+    <>
+      <Helmet>
+        {/* gtag stub */}
+        <script>{`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}`}</script>
+        {/* Blocked GA script */}
+        <script type="privion" privion-category="analytics"
+          src="https://www.googletagmanager.com/gtag/js?id=G-XXX" async></script>
+        <script type="privion" privion-category="analytics">{`gtag('js', new Date()); gtag('config', 'G-XXX');`}</script>
+      </Helmet>
+
+      <ConsentProvider config={config}>
+        <YourApp />
+        <ConsentBanner />
+      </ConsentProvider>
+    </>
+  );
+}
+```
+
+<Aside type="tip" title="Next.js App Router?">
+  Use `next/script` with `strategy="beforeInteractive"` for the gtag stub. The blocked `<script type="privion">` works as plain `<script>` since Next.js doesn't bundle scripts with unrecognized MIME types.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## Verifying it works
+
+Open DevTools → Network, filter by `google-analytics.com`. On first page load (before consent):
+
+- **`basic` mode**: zero requests to `googletagmanager.com`. Banner shown.
+- **`advanced` mode**: a request to `g/collect` with `gcs=G100` (consent-less ping). Banner still shown.
+
+After clicking "Accept all":
+
+- A new `<script>` element appears in the DOM right after the original `<script type="privion">`.
+- `gtag/js?id=G-XXX` loads.
+- Subsequent page views POST to `g/collect` with `gcs=G111` (full consent).
+
+After clicking "Reject all":
+
+- **`basic` mode**: nothing more happens. GA never loads.
+- **`advanced` mode**: gtag continues firing cookieless pings (`gcs=G100`). No persistent identifiers.
+
+## Common pitfalls
+
+- **The dataLayer init script must come BEFORE the privion init script.** The library pushes to `dataLayer` if `gtag` isn't defined yet; if dataLayer doesn't exist either, the GCM bridge falls back to the custom-event transport, which gtag doesn't pick up.
+- **Don't put `gtag('config', ...)` outside of `[type="privion"]`.** That call activates the tracker; running it pre-consent defeats the purpose.
+- **`async` on the blocked script:** preserved by the adapter when activating. If you don't have `async`, the activated script loads synchronously and blocks subsequent execution. Add `async` unless you have a specific reason not to.
+
+## See also
+
+- [Google Consent Mode](/guides/google-consent-mode/) — the mechanics
+- [Attribute schema — Script gating](/reference/attribute-schema/#script-gating) — how `type="privion"` works under the hood

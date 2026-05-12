@@ -1,0 +1,149 @@
+---
+title: Event lifecycle
+description: ready, update, accept_all, reject_all, reset — when they fire, in what order, with what state.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+The engine emits five events. Subscribe with `consent.on(event, handler)`; the call returns an unsubscribe function.
+
+## Events
+
+| Event         | Fires when                                                   | Followed by                  |
+| ------------- | ------------------------------------------------------------ | ---------------------------- |
+| `ready`       | Constructor completes (synchronously, before `new` returns). | —                            |
+| `update`      | Any `setCategory` / `setMany` that actually changes state.   | `accept_all` / `reject_all` if triggered from there |
+| `accept_all`  | `consent.acceptAll()` runs.                                  | —                            |
+| `reject_all`  | `consent.rejectAll()` runs.                                  | —                            |
+| `reset`       | `consent.reset()` runs.                                      | —                            |
+
+All handlers receive a single argument: the **current** `ConsentState` (an immutable snapshot of `state` at emit time).
+
+## Ordering
+
+```text
+                          ┌─── update ←──── setCategory / setMany
+                          │
+ construct ──▶ ready ─────┤
+                          │
+                          ├── update + accept_all  (acceptAll())
+                          ├── update + reject_all  (rejectAll())
+                          └── reset                 (reset() — does NOT emit update)
+```
+
+<Aside title="`update` fires *before* `accept_all` / `reject_all`">
+  Inside `acceptAll()` / `rejectAll()` the engine first emits `update` (so generic listeners see the change) and then emits `accept_all` / `reject_all` (so banner-specific listeners can hide the modal, log analytics, etc.). Both events carry the same final state.
+</Aside>
+
+## Source semantics
+
+The `source` field on the emitted state reflects the value **at emit time** — the engine no longer mutates `state.source` after emitting. This was a real bug in 0.x (`update` would carry `source: 'api'` while the engine immediately overwrote it to `'banner'`). Listeners can rely on `source` matching the intent of the change.
+
+```ts
+consent.on('update', (state) => {
+  state.source; // 'banner' | 'preferences' | 'api' — definitively
+});
+```
+
+## Subscribing
+
+<Tabs syncKey="stack">
+<TabItem label="Vanilla / DOM">
+
+```ts
+const unsubscribe = consent.on('update', (state) => {
+  console.log('state changed', state);
+});
+
+// Later: stop receiving events
+unsubscribe();
+
+// Subscribe to multiple events
+const offReady = consent.on('ready', onReady);
+const offReset = consent.on('reset', onReset);
+```
+
+</TabItem>
+<TabItem label="React">
+
+The `useConsent()` hook re-renders the component on every `update` automatically. For one-off side effects (analytics tracking, logging), subscribe directly from a `useEffect`:
+
+```tsx
+import { useConsent } from '@privion-consent/react';
+import { useEffect } from 'react';
+
+function ConsentLogger() {
+  const { consent } = useConsent();
+
+  useEffect(() => {
+    const off = consent.on('update', (state) => {
+      analytics.track('consent_changed', state);
+    });
+    return off;
+  }, [consent]);
+
+  return null;
+}
+```
+
+</TabItem>
+<TabItem label="Astro">
+
+The engine instance is attached to `window.__privionConsent` by `<PrivionScript>`. From any other client script:
+
+```astro
+<script>
+  function whenReady(cb) {
+    if (window.__privionConsent) return cb(window.__privionConsent);
+    queueMicrotask(() => whenReady(cb));
+  }
+  whenReady((consent) => {
+    consent.on('update', (state) => {
+      console.log('state changed', state);
+    });
+  });
+</script>
+```
+
+</TabItem>
+</Tabs>
+
+## The `ready` edge case
+
+`ready` fires **synchronously inside the constructor**, *before* `new PrivionConsent(...)` returns. That means you can't `consent.on('ready', ...)` and expect to receive it for the current construction — the handler isn't registered yet.
+
+Two patterns handle this:
+
+```ts
+// Pattern 1: Just use the post-construction state directly.
+const consent = createPrivionConsent(config);
+const initialState = consent.getState(); // same as what 'ready' would have emitted
+```
+
+```ts
+// Pattern 2: If a later subscriber needs to behave as if ready had just fired
+// (e.g. wiring up a handler chain), the DOM adapter's pattern is to call the
+// handler immediately AND register it for future updates.
+function onReady(state: ConsentState) { /* ... */ }
+const consent = createPrivionConsent(config);
+onReady(consent.getState());
+consent.on('update', onReady); // for subsequent changes
+```
+
+The DOM adapter does this internally — see `script-handler.ts` / `iframe-handler.ts` if you're curious.
+
+## Error handling
+
+Errors thrown from a handler are caught by the engine and reported via `console.error` so one bad listener can't break another or block subsequent events. If you want app-level visibility, wrap the React tree in [`<ConsentErrorBoundary>`](/reference/api/#consenterrorboundary) for render-time errors, and use `onSyncError` for backend-sync errors specifically.
+
+## What's *not* an event
+
+A few things people sometimes assume are events but aren't:
+
+- **Page navigation.** The engine is unaware of route changes. SPAs that re-mount the consent provider on route change should call `dom.destroy()` on the old `PrivionDomHandle` before constructing a new one — otherwise the old MutationObservers keep firing.
+- **Storage external changes.** If another tab clears `localStorage` / cookies, the engine doesn't know. This is consistent with most consent libraries; cross-tab sync isn't in scope for v1.
+- **Region resolution.** `region` is read once at construction. Re-resolving for a new region needs a new engine instance.
+
+## Reference
+
+[Specification §4 — Event lifecycle](/reference/specification/#event-lifecycle).

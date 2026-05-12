@@ -1,0 +1,204 @@
+---
+title: Storage adapters
+description: Built-in cookie and localStorage backends, the ConsentStorageAdapter interface, and schema migrations.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+The engine persists state on every change. By default, that means a cookie at `privion-consent` valid for 365 days. Override the default via `config.storage`.
+
+## Built-in adapters
+
+<Tabs syncKey="storage-type">
+<TabItem label="Cookie (default)">
+
+```ts
+createPrivionConsent({
+  // ...
+  storage: {
+    type: 'cookie',
+    key: 'privion-consent',
+    cookieOptions: {
+      path: '/',
+      domain: '.example.com',   // share across subdomains
+      maxAgeDays: 365,
+      secure: true,
+      sameSite: 'Lax',
+    },
+  },
+});
+```
+
+**Why cookies are the default:**
+- Visible to server-rendered code (Next.js middleware, Astro SSR layouts).
+- Survive across subdomains when `domain` is configured.
+- Don't trigger localStorage privacy heuristics in some browsers.
+
+</TabItem>
+<TabItem label="localStorage">
+
+```ts
+createPrivionConsent({
+  // ...
+  storage: { type: 'localStorage', key: 'privion-consent' },
+});
+```
+
+**When to pick localStorage over cookies:**
+- You're a pure SPA with no server-side rendering — no benefit to cookies.
+- Cookie size is a concern (this is unlikely; consent state is small).
+- Your privacy team explicitly requires cookies only after consent — but that's a chicken-and-egg situation; storing consent itself is generally considered legitimate-interest under both GDPR and ePrivacy.
+
+</TabItem>
+</Tabs>
+
+## Custom adapters
+
+Implement `ConsentStorageAdapter` for any other backend — IndexedDB, React Native AsyncStorage, a server-side store, encrypted-local storage, etc.
+
+```ts
+import type { ConsentStorageAdapter, ConsentState } from '@privion-consent/core';
+
+class IndexedDBAdapter implements ConsentStorageAdapter {
+  private cached: ConsentState | null = null;
+
+  constructor() {
+    // Buffer state in-memory and flush asynchronously.
+    this.load().then((s) => (this.cached = s));
+  }
+
+  save(state: ConsentState): void {
+    this.cached = state;
+    void persistToIndexedDB(state); // fire and forget
+  }
+
+  load(): ConsentState | null {
+    return this.cached; // synchronous; populated by the IIFE above
+  }
+
+  clear(): void {
+    this.cached = null;
+    void clearIndexedDB();
+  }
+}
+
+createPrivionConsent({
+  // ...
+  storage: new IndexedDBAdapter(),
+});
+```
+
+<Aside type="caution" title="Why sync?">
+  The `load()` method is **synchronous** in v1 because the engine constructor needs the persisted state to make the first banner-show decision. Adapters that wrap async backends should buffer the state in memory and flush asynchronously inside `save`. Async-first adapters with deferred load are out of scope for v1; consumers can layer their own "loading…" UI before constructing the engine if they need it.
+</Aside>
+
+The interface in full:
+
+```ts
+interface ConsentStorageAdapter {
+  save(state: ConsentState): void;
+  load(): ConsentState | null;
+  clear(): void;
+}
+```
+
+## Storage helpers
+
+The library exports two helpers for advanced use:
+
+```ts
+import { isStorageAdapter, resolveStorage } from '@privion-consent/core';
+
+// Type guard — distinguishes a custom adapter from a built-in StorageConfig
+isStorageAdapter(value): value is ConsentStorageAdapter;
+
+// Resolves config.storage into a ConsentStorageAdapter instance
+resolveStorage(input: StorageConfig | ConsentStorageAdapter | undefined): ConsentStorageAdapter;
+```
+
+You generally don't need these — the engine calls `resolveStorage` internally — but they're useful in tests or when building higher-level adapters that wrap a fallback chain.
+
+## Migrations
+
+When you change category shape (rename, split, remove), bump `config.version` and provide a `migrations` array to preserve consent across the bump.
+
+```ts
+import type { ConsentMigration } from '@privion-consent/core';
+
+const oneToTwo: ConsentMigration = {
+  from: 1,
+  to: 2,
+  migrate: (old) => ({
+    ...old,
+    version: 2,
+    categories: {
+      necessary: old.categories.necessary ?? 'granted',
+      // 'analytics' was renamed to 'stats'
+      stats: old.categories.analytics ?? 'denied',
+      // 'ads' is brand new — start denied
+      ads: 'denied',
+    },
+  }),
+};
+
+createPrivionConsent({
+  version: 2,
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+    { id: 'stats', label: 'Stats', defaultStatus: 'denied' },
+    { id: 'ads', label: 'Ads', defaultStatus: 'denied' },
+  ],
+  migrations: [oneToTwo],
+});
+```
+
+### Chaining
+
+Migrations chain forward through gaps. A state stored at version 1 in a config at version 3 runs `1→2` then `2→3` if both migrations are registered:
+
+```ts
+migrations: [
+  { from: 1, to: 2, migrate: (s) => ({ ...s, version: 2, ... }) },
+  { from: 2, to: 3, migrate: (s) => ({ ...s, version: 3, ... }) },
+]
+```
+
+The engine looks up the migration whose `from` matches the stored version, runs it, then checks whether the resulting state's version matches `config.version`. If not, it looks up the next migration and repeats. If no migration is found and the version doesn't match, state falls back to defaults (effectively a soft reset).
+
+### What if a migration throws?
+
+Migrations are user code. If yours throws, the engine catches the error, logs `console.warn`, and falls back to defaults. The user will be re-prompted via the banner. Plan your migrations defensively:
+
+```ts
+migrate: (old) => {
+  try {
+    return {
+      ...old,
+      version: 2,
+      categories: { stats: old.categories.analytics ?? 'denied' },
+    };
+  } catch {
+    // Garbled stored state? Force a clean re-prompt.
+    return null as any; // engine treats as "no migration result, use defaults"
+  }
+};
+```
+
+(In practice, return `null` to signal "use defaults" rather than throwing — cleaner control flow.)
+
+## Reading / clearing manually
+
+```ts
+import { resolveStorage } from '@privion-consent/core';
+
+const storage = resolveStorage({ type: 'localStorage' });
+const stored = storage.load(); // ConsentState | null
+storage.clear();                // remove the entry
+```
+
+You rarely need to do this directly; `consent.reset()` is the proper way to clear stored state because it also re-initializes the engine's in-memory state and emits a `reset` event.
+
+## Reference
+
+- [API reference — Storage](/reference/api/#storage)
+- [Specification §7 — Storage](/reference/specification/#storage)

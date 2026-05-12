@@ -1,0 +1,459 @@
+---
+title: API reference
+description: Every exported symbol across the four packages, with full type signatures and defaults.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This is the canonical reference. Headings below match `package > namespace > symbol`. Anchor links are stable across minor versions.
+
+## `@privion-consent/core`
+
+### `createPrivionConsent(config)`
+
+```ts
+function createPrivionConsent(config: PrivionConsentConfig): PrivionConsent;
+```
+
+Factory that constructs the engine. Equivalent to `new PrivionConsent(config)` but exported as a function for ergonomics.
+
+### `PrivionConsent`
+
+The engine class. Holds state, emits events, applies side effects (storage, GCM, backend sync).
+
+```ts
+class PrivionConsent {
+  constructor(config: PrivionConsentConfig);
+
+  // State
+  getState(): ConsentState;
+  getConfig(): PrivionConsentConfig;
+  getCategoryConfig(id: string): ConsentCategoryConfig | undefined;
+
+  // Mutations
+  setCategory(id: string, status: ConsentStatus, source?: ConsentSource): void;
+  setMany(updates: Record<string, ConsentStatus>, source?: ConsentSource): void;
+  acceptAll(): void;
+  rejectAll(): void;
+  reset(): void;
+
+  // Events
+  on(event: ConsentEvent, handler: (state: ConsentState) => void): () => void;
+  off(event: ConsentEvent, handler: (state: ConsentState) => void): void;
+
+  // Google Consent Mode (called automatically; exposed for advanced use)
+  syncGoogleConsentMode(options?: { mode?: 'basic' | 'advanced' }): void;
+}
+```
+
+#### `getState()` / `getConfig()` / `getCategoryConfig()`
+
+`getState()` returns an **immutable snapshot** — mutating it doesn't affect the engine. Same for `getConfig()`. `getCategoryConfig(id)` returns the config block for a single category by id, or `undefined` if the id isn't declared.
+
+#### `setCategory(id, status, source?)`
+
+Sets a single category's status. The optional `source` argument declares why this change is happening:
+
+- `'banner'` / `'preferences'` → flips `state.userDecided` to `true` and hides the banner.
+- `'api'` (default) → leaves `userDecided` alone. Use for programmatic pre-seeding.
+
+Required categories silently ignore `denied` attempts (logged via `console.warn`).
+
+#### `setMany(updates, source?)`
+
+Batched version. The `update` event fires once even when multiple categories change. Use this from preferences flows where multiple toggles are committed together.
+
+#### `acceptAll()` / `rejectAll()`
+
+Convenience for the banner buttons. Internally call `setMany(updates, 'banner')` over every non-required category, then emit a dedicated `accept_all` / `reject_all` event. The `update` event fires *first*, then the dedicated one, both with the same final state.
+
+#### `reset()`
+
+Clears storage, re-initializes from defaults, emits `reset`. Does **not** emit `update`. Does **not** call `syncToBackend` (resets are typically for testing / GDPR right-to-erasure, not state changes the backend cares about).
+
+#### `on(event, handler)` / `off(event, handler)`
+
+`on` returns an unsubscribe function. `off` exists for symmetry but the returned-callback pattern is preferred. Handlers run synchronously in registration order; errors are caught and `console.error`'d.
+
+### `resolveRegionMode(config)`
+
+```ts
+function resolveRegionMode(config: PrivionConsentConfig): RegionMode | undefined;
+```
+
+Returns the resolved mode for a given config. Useful for analytics tagging or conditional UI:
+
+```ts
+const mode = resolveRegionMode(config); // 'opt-in' | 'opt-out' | undefined
+```
+
+### Types
+
+```ts
+type ConsentStatus = 'granted' | 'denied' | 'unknown';
+type ConsentSource = 'banner' | 'preferences' | 'api';
+type ConsentEvent = 'ready' | 'update' | 'accept_all' | 'reject_all' | 'reset';
+type RegionMode = 'opt-in' | 'opt-out';
+
+interface ConsentState {
+  categories: Record<string, ConsentStatus>;
+  updatedAt: string; // ISO 8601
+  version: number;
+  source: ConsentSource;
+  userDecided: boolean;
+}
+
+interface ConsentCategoryConfig {
+  id: string;
+  label: string;
+  description?: string;
+  required?: boolean;
+  defaultStatus?: ConsentStatus;
+  googleMapping?: Partial<GoogleConsentMapping>;
+}
+
+interface GoogleConsentMapping {
+  ad_storage: ConsentStatus;
+  analytics_storage: ConsentStatus;
+  ad_user_data: ConsentStatus;
+  ad_personalization: ConsentStatus;
+}
+
+interface PrivionConsentConfig {
+  version: number;
+  categories: ConsentCategoryConfig[];
+  region?: string;
+  regionRules?: Record<string, { mode: RegionMode }>;
+  defaultRegionMode?: RegionMode;
+  storage?: StorageConfig | ConsentStorageAdapter;
+  googleConsentMode?: { mode: 'basic' | 'advanced' };
+  backendSync?: BackendSyncConfig;
+  migrations?: ConsentMigration[];
+}
+```
+
+### Storage
+
+```ts
+interface ConsentStorageAdapter {
+  save(state: ConsentState): void;
+  load(): ConsentState | null;
+  clear(): void;
+}
+
+interface StorageConfig {
+  type?: 'cookie' | 'localStorage'; // default 'cookie'
+  key?: string;                     // default 'privion-consent'
+  cookieOptions?: {
+    path?: string;       // default '/'
+    domain?: string;
+    maxAgeDays?: number; // default 365
+    secure?: boolean;    // default true
+    sameSite?: 'Lax' | 'Strict' | 'None'; // default 'Lax'
+  };
+}
+
+class CookieStorage implements ConsentStorageAdapter {
+  constructor(options?: { key?: string; cookieOptions?: StorageConfig['cookieOptions'] });
+}
+
+class LocalStorageAdapter implements ConsentStorageAdapter {
+  constructor(options?: { key?: string });
+}
+
+function isStorageAdapter(value: unknown): value is ConsentStorageAdapter;
+function resolveStorage(
+  input: StorageConfig | ConsentStorageAdapter | undefined,
+): ConsentStorageAdapter;
+
+// Deprecated; kept for back-compat
+class ConsentStorage implements ConsentStorageAdapter { ... }
+```
+
+### Backend sync
+
+```ts
+interface BackendSyncConfig {
+  endpoint: string;
+  method?: 'POST' | 'PUT';                  // default 'POST'
+  headers?: Record<string, string>;
+  includeIp?: boolean;                      // currently no-op
+  includeUserAgent?: boolean;
+  retries?: number;                         // default 3
+  retryBaseDelayMs?: number;                // default 200
+  payloadTransform?: (state: ConsentState) => unknown;
+  onSyncError?: (error: BackendSyncError) => void;
+}
+
+interface BackendSyncError {
+  endpoint: string;
+  attempt: number;
+  totalAttempts: number;
+  cause: 'network' | 'http';
+  status?: number;
+  statusText?: string;
+  error?: unknown;
+}
+```
+
+### Migrations
+
+```ts
+interface ConsentMigration {
+  from: number;
+  to: number;
+  migrate: (old: ConsentState) => ConsentState;
+}
+```
+
+### Google Consent Mode
+
+```ts
+function computeGoogleConsentMode(
+  state: ConsentState,
+  config: PrivionConsentConfig,
+): GoogleConsentMapping;
+
+function syncGoogleConsentMode(
+  mapping: GoogleConsentMapping,
+  mode?: 'basic' | 'advanced',  // default 'basic'
+  isFirstLoad?: boolean,
+): void;
+```
+
+The engine calls `syncGoogleConsentMode` automatically when `googleConsentMode` is configured. The exports are public so consumers building custom transports / analytics tags can compute and dispatch the mapping themselves.
+
+## `@privion-consent/dom`
+
+### `initPrivionDom(consent, options?)`
+
+```ts
+function initPrivionDom(
+  consent: PrivionConsent,
+  options?: PrivionDomOptions,
+): PrivionDomHandle;
+
+interface PrivionDomOptions {
+  root?: HTMLElement | Document;       // default document
+  categoryMatchMode?: 'any' | 'all';   // default 'any'
+}
+
+interface PrivionDomHandle {
+  destroy(): void;
+}
+```
+
+Scans `root` for `privion-*` / `[privion]` / `[type="privion"]` elements and wires them to the engine. Sets up a `MutationObserver` on `root` so late-injected elements are activated automatically.
+
+The returned handle's `destroy()` disconnects every observer, unsubscribes consent listeners, and clears tracked element maps. Call it from SPA route teardown and test cleanup — without it MutationObservers from previous mounts keep firing.
+
+#### `categoryMatchMode`
+
+Default `'any'`: a `<script type="privion" privion-category="a,b">` activates when *any* of `a`, `b` is granted. Set to `'all'` for strict AND semantics.
+
+### Styles
+
+```ts
+import '@privion-consent/dom/styles.css';
+```
+
+Opt-in default stylesheet. See [Default styles](/reference/styles/).
+
+## `@privion-consent/react`
+
+### `<ConsentProvider>`
+
+```tsx
+interface ConsentProviderProps {
+  config: PrivionConsentConfig;
+  i18n?: Partial<ConsentI18n>;
+  children: React.ReactNode;
+}
+
+function ConsentProvider(props: ConsentProviderProps): JSX.Element;
+```
+
+Wraps your app with the engine. Constructs `PrivionConsent` lazily on first render and initializes the DOM adapter. Re-renders subscribers on every `update` event.
+
+### `<ConsentBanner>` / `<ConsentPreferences>`
+
+```tsx
+function ConsentBanner(props?: { className?: string }): JSX.Element | null;
+function ConsentPreferences(props?: { className?: string }): JSX.Element | null;
+```
+
+Headless banner / preferences modal. Render `null` when `state.userDecided` is true. Use the bundled stylesheet (`@privion-consent/dom/styles.css`) for default styling, or write your own targeting `[data-privion-banner]` / `[data-privion-preferences]`.
+
+### `<ConsentErrorBoundary>`
+
+```tsx
+interface ConsentErrorBoundaryProps {
+  fallback?: React.ReactNode | ((error: Error) => React.ReactNode);
+  onError?: (error: Error, info: React.ErrorInfo) => void;
+  children: React.ReactNode;
+}
+
+class ConsentErrorBoundary extends React.Component<ConsentErrorBoundaryProps> { ... }
+```
+
+Stops a thrown error inside the consent subtree from unmounting the host app. Takes a static or function `fallback` plus an `onError` callback matching React's `componentDidCatch` signature.
+
+### `useConsent()`
+
+```tsx
+function useConsent(): {
+  consent: PrivionConsent;
+  state: ConsentState;
+};
+```
+
+Returns the engine and the current state. Re-renders on every `update` event. Throws if used outside `<ConsentProvider>`.
+
+### `useConsentCategory(id)`
+
+```tsx
+function useConsentCategory(id: string): {
+  status: ConsentStatus;
+  set: (status: ConsentStatus, source?: ConsentSource) => void;
+};
+```
+
+Convenience hook for a single category. The returned `set` accepts an optional `source` — pass `'preferences'` when the call comes from a real UI flow.
+
+### `useConsentI18n()`
+
+```tsx
+function useConsentI18n(): ConsentI18n;
+```
+
+Returns the merged locale (base + overrides passed to `<ConsentProvider>`). Missing keys fall back to English.
+
+### i18n
+
+```tsx
+interface ConsentI18n {
+  bannerTitle?: string;
+  bannerBody: string;
+  acceptAll: string;
+  rejectAll: string;
+  customize: string;
+  preferencesTitle: string;
+  preferencesBody?: string;
+  save: string;
+  alwaysOn: string;
+  categories?: Record<string, { label?: string; description?: string }>;
+}
+
+const enLocale: ConsentI18n;
+const deLocale: ConsentI18n;
+const frLocale: ConsentI18n;
+const esLocale: ConsentI18n;
+
+function mergeI18n(base: ConsentI18n, override: Partial<ConsentI18n>): ConsentI18n;
+```
+
+## `@privion-consent/astro`
+
+Components are imported by path (Astro's convention for `.astro` files). The component props mirror the DOM adapter's attribute schema.
+
+```ts
+// Components (import by path)
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
+import CategoryToggle from '@privion-consent/astro/CategoryToggle.astro';
+
+// Server helper
+import {
+  resolveRegion,
+  DEFAULT_REGION_HEADERS,
+  DEFAULT_IGNORED_REGION_VALUES,
+  type ResolveRegionOptions,
+} from '@privion-consent/astro/server';
+
+// Client boot helper (used by <PrivionScript> internally; expose for advanced setups)
+import { bootPrivion, readSerializedConfig } from '@privion-consent/astro/boot';
+
+// Re-exported types so you don't also need @privion-consent/core as a direct dep
+import type {
+  PrivionConsentConfig,
+  ConsentState,
+  ConsentSource,
+  ConsentStatus,
+  /* ... etc ... */
+} from '@privion-consent/astro';
+```
+
+### `<PrivionScript config={...} />`
+
+```ts
+interface Props {
+  config: PrivionConsentConfig;
+}
+```
+
+Renders two `<script>` tags into `<head>`:
+1. A `<script type="application/json" id="privion-config">` carrying the serialized config.
+2. A bundled `<script>` that boots the engine and DOM adapter, attaching the instance to `window.__privionConsent`.
+
+The serialized config is JSON, so callbacks (`onSyncError`, `payloadTransform`, region resolvers, custom storage adapters) **cannot** be passed via `<PrivionScript>`. For those, bypass `<PrivionScript>` and construct the engine yourself — see the [Astro recipe](/recipes/astro-callbacks/).
+
+### `<ConsentBanner>` / `<ConsentPreferences>` / `<CategoryToggle>`
+
+```astro
+<ConsentBanner />
+<ConsentPreferences categories={config.categories} />
+<CategoryToggle category={config.categories[1]} />
+```
+
+Native `.astro` components. Render markup with the `privion-*` attributes the DOM adapter recognizes. Hidden by default; the adapter unhides them on `ready` if `state.userDecided` is false.
+
+### `resolveRegion(headers, options?)`
+
+```ts
+function resolveRegion(
+  headers: Headers,
+  options?: ResolveRegionOptions,
+): string | undefined;
+
+interface ResolveRegionOptions {
+  headers?: string[];          // override default header order
+  ignoreValues?: string[];     // override default sentinel list
+}
+
+const DEFAULT_REGION_HEADERS: readonly string[];      // cf-ipcountry, x-vercel-ip-country, x-country, x-appengine-country
+const DEFAULT_IGNORED_REGION_VALUES: readonly string[]; // XX, T1
+```
+
+Reads the user's region from CDN headers. First non-empty, non-sentinel value wins. Returns the uppercase ISO 3166-1 alpha-2 code, or `undefined`.
+
+### `bootPrivion(config)` / `readSerializedConfig(id?)`
+
+```ts
+function bootPrivion(config: PrivionConsentConfig): PrivionDomHandle;
+function readSerializedConfig(elementId?: string): PrivionConsentConfig | null;
+```
+
+Used by `<PrivionScript>` internally. Exported for consumers that want to construct the engine themselves (e.g. to pass non-serializable callbacks):
+
+```astro
+<script>
+  import { createPrivionConsent } from '@privion-consent/core';
+  import { initPrivionDom } from '@privion-consent/dom';
+
+  const consent = createPrivionConsent({
+    version: 1,
+    categories: [...],
+    backendSync: {
+      endpoint: '/api/consent',
+      onSyncError: (err) => Sentry.captureException(err), // Can't survive JSON!
+    },
+  });
+  initPrivionDom(consent);
+  window.__privionConsent = consent;
+</script>
+```
+
+## Stability
+
+Everything documented above is part of the v1.x public surface. Breaking changes follow [semver](https://semver.org/) and are documented in the [Migration guide](/reference/migration/). Internal helpers not listed here may change in minor releases without notice.

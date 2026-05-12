@@ -1,0 +1,279 @@
+---
+title: Quick start
+description: Get a working consent flow in under five minutes — vanilla, React, or Astro.
+---
+
+import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
+
+This page walks through a working consent setup for whichever stack you're on. By the end you'll have:
+
+- A banner that appears on first visit and stays hidden after the user decides.
+- A preferences modal opened by a "Customize" button.
+- Google Analytics blocked until consent is granted.
+- State persisted across reloads.
+
+If you haven't already, see [Installation](/guides/install/) for the right package combination for your project.
+
+## 1. Configure the engine
+
+The same `PrivionConsentConfig` works across all three stacks. The minimum:
+
+```ts
+const config = {
+  version: 1,
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'marketing', label: 'Marketing' },
+  ],
+  storage: { type: 'localStorage' },
+  googleConsentMode: { mode: 'advanced' },
+};
+```
+
+<Aside title="What the config does">
+  - **`version: 1`** stamps the stored state. Bump it to invalidate previously-stored consent when categories change shape.
+  - **`required: true` + `defaultStatus: 'granted'`** marks necessary cookies as always-on. The DOM adapter auto-disables the matching checkbox.
+  - **Categories without `defaultStatus`** start as `'unknown'`, which means the banner is shown until the user decides.
+  - **`storage: { type: 'localStorage' }`** persists the decision in `localStorage` under `privion-consent`. The default is a cookie if you omit `storage` entirely.
+  - **`googleConsentMode: { mode: 'advanced' }`** emits `gtag('consent', 'default', ...)` immediately on page load so unblocked Google tags can switch into anonymized cookieless pings. See [Google Consent Mode](/guides/google-consent-mode/) for `basic` vs `advanced`.
+</Aside>
+
+## 2. Wire it into your app
+
+<Tabs syncKey="stack">
+<TabItem label="Vanilla JS">
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <!-- Optional default theme (skip for fully custom CSS) -->
+    <link rel="stylesheet" href="https://unpkg.com/@privion-consent/dom/dist/styles.css" />
+  </head>
+  <body>
+    <!-- 1. Tracking scripts blocked until consent -->
+    <script
+      type="privion"
+      privion-category="analytics"
+      src="https://www.googletagmanager.com/gtag/js?id=G-XXX"
+    ></script>
+
+    <!-- 2. Banner (hidden until userDecided===false on engine init) -->
+    <div privion-banner hidden>
+      <p>We use cookies and similar technologies to improve your experience.</p>
+      <button privion-reject-all>Reject all</button>
+      <button privion-open-preferences>Customize</button>
+      <button privion-accept-all>Accept all</button>
+    </div>
+
+    <!-- 3. Preferences modal -->
+    <div privion-preferences hidden>
+      <h2>Privacy preferences</h2>
+      <label>
+        <input type="checkbox" privion-required="necessary" disabled checked />
+        Necessary <span>required for the site to function</span>
+      </label>
+      <label>
+        <input type="checkbox" privion-toggle="analytics" />
+        Analytics
+      </label>
+      <label>
+        <input type="checkbox" privion-toggle="marketing" />
+        Marketing
+      </label>
+      <button privion-save-preferences>Save preferences</button>
+    </div>
+
+    <!-- 4. Engine boot -->
+    <script type="module">
+      import { createPrivionConsent } from '@privion-consent/core';
+      import { initPrivionDom } from '@privion-consent/dom';
+
+      const consent = createPrivionConsent({
+        version: 1,
+        categories: [
+          { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+          { id: 'analytics', label: 'Analytics' },
+          { id: 'marketing', label: 'Marketing' },
+        ],
+        storage: { type: 'localStorage' },
+        googleConsentMode: { mode: 'advanced' },
+      });
+
+      const dom = initPrivionDom(consent);
+      // SPA route teardown? call dom.destroy() to disconnect MutationObservers.
+
+      consent.on('update', (state) => console.log('consent updated', state));
+    </script>
+  </body>
+</html>
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+// src/App.tsx
+import {
+  ConsentBanner,
+  ConsentErrorBoundary,
+  ConsentProvider,
+} from '@privion-consent/react';
+import '@privion-consent/dom/styles.css'; // optional default theme
+
+const config = {
+  version: 1,
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'marketing', label: 'Marketing' },
+  ],
+  storage: { type: 'localStorage' as const },
+  googleConsentMode: { mode: 'advanced' as const },
+};
+
+export function App() {
+  return (
+    <ConsentErrorBoundary>
+      <ConsentProvider config={config}>
+        <YourApp />
+        <ConsentBanner />
+      </ConsentProvider>
+    </ConsentErrorBoundary>
+  );
+}
+```
+
+Blocking scripts works the same way as in vanilla — anywhere in your `<head>` (rendered server-side or injected via `<Helmet>` / Next.js `<Script>`):
+
+```html
+<script type="privion" privion-category="analytics" src="..."></script>
+```
+
+The DOM adapter is initialized inside `<ConsentProvider>` automatically.
+
+</TabItem>
+<TabItem label="Astro">
+
+```astro
+---
+// src/layouts/Layout.astro
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import ConsentBanner from '@privion-consent/astro/ConsentBanner.astro';
+import ConsentPreferences from '@privion-consent/astro/ConsentPreferences.astro';
+import type { PrivionConsentConfig } from '@privion-consent/astro';
+import '@privion-consent/dom/styles.css';
+
+const config: PrivionConsentConfig = {
+  version: 1,
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+    { id: 'analytics', label: 'Analytics' },
+    { id: 'marketing', label: 'Marketing' },
+  ],
+  storage: { type: 'localStorage' },
+  googleConsentMode: { mode: 'advanced' },
+};
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <PrivionScript config={config} />
+  </head>
+  <body>
+    <slot />
+    <ConsentBanner />
+    <ConsentPreferences categories={config.categories} />
+  </body>
+</html>
+```
+
+Track-blocked scripts in any Astro page:
+
+```astro
+<script type="privion" privion-category="analytics" src="..." is:inline></script>
+```
+
+<Aside type="caution" title="Why `is:inline`">
+  Astro's bundler ignores `<script type="privion">` because it isn't a recognized JavaScript MIME — but the bundler does rewrite `src` attributes for known modules. Add `is:inline` to keep the source URL untouched.
+</Aside>
+
+</TabItem>
+</Tabs>
+
+## 3. Verify it works
+
+<Steps>
+
+1. **Load the page.** The banner should appear. Open DevTools → Application → Storage and confirm there's no `privion-consent` entry yet.
+
+2. **Click "Accept all".** The banner disappears. `privion-consent` shows up in localStorage with `userDecided: true` and `analytics: 'granted'`. The Google Analytics script tag should now be live in the page (a new `<script>` appears right after the original `<script type="privion">`).
+
+3. **Reload.** The banner stays hidden. Stored state hydrates with `userDecided: true`.
+
+4. **Click "Reset stored decision"** (or call `consent.reset()` from devtools). The banner reappears and `privion-consent` is removed from localStorage.
+
+</Steps>
+
+## 4. Listen for changes
+
+Subscribe to engine events to react to consent updates in your own code:
+
+<Tabs syncKey="stack">
+<TabItem label="Vanilla JS">
+
+```ts
+consent.on('update', (state) => {
+  if (state.categories.analytics === 'granted') {
+    initAnalytics();
+  }
+});
+```
+
+</TabItem>
+<TabItem label="React">
+
+```tsx
+import { useConsentCategory } from '@privion-consent/react';
+
+function AnalyticsLoader() {
+  const { status } = useConsentCategory('analytics');
+  useEffect(() => {
+    if (status === 'granted') initAnalytics();
+  }, [status]);
+  return null;
+}
+```
+
+</TabItem>
+<TabItem label="Astro">
+
+```astro
+<script>
+  function whenReady(cb) {
+    if (window.__privionConsent) return cb(window.__privionConsent);
+    queueMicrotask(() => whenReady(cb));
+  }
+
+  whenReady((consent) => {
+    consent.on('update', (state) => {
+      if (state.categories.analytics === 'granted') initAnalytics();
+    });
+  });
+</script>
+```
+
+</TabItem>
+</Tabs>
+
+See [Event lifecycle](/guides/events/) for the full event list and ordering guarantees.
+
+## Where to go next
+
+- [Data model](/guides/data-model/) — understand `userDecided`, sources, and category statuses.
+- [Regions & i18n](/guides/regions-i18n/) — make the banner appear only for EU visitors.
+- [Recipes](/recipes/google-analytics/) — copy-paste solutions for common scenarios.
+- [Attribute schema](/reference/attribute-schema/) — every `privion-*` attribute the DOM adapter recognizes.
+- [Troubleshooting](/guides/troubleshooting/) — banner not appearing? scripts firing too early?

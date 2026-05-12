@@ -1,0 +1,160 @@
+---
+title: Migrate from another consent library
+description: Patterns for swapping out CookieYes, Cookiebot, Osano, OneTrust, or a homebrew solution.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This page covers the practical bits of replacing an existing consent layer with Privion. Every migration follows roughly the same arc:
+
+1. Audit what's tracked (scripts, iframes, conditional content).
+2. Map the existing categories to your new ones.
+3. Preserve existing user decisions where possible.
+4. Cut over.
+
+## Audit
+
+Open your live site in DevTools → Network. Make a list of every script that loads pre-consent vs post-consent. Common ones:
+
+| Vendor                  | Typical script src                                  | Category    |
+| ----------------------- | --------------------------------------------------- | ----------- |
+| Google Analytics 4      | `googletagmanager.com/gtag/js?id=G-...`             | analytics   |
+| Google Tag Manager      | `googletagmanager.com/gtm.js?id=GTM-...`            | analytics + marketing |
+| Google Ads / Floodlight | various `googleadservices.com`, `doubleclick.net`   | marketing   |
+| Meta Pixel              | `connect.facebook.net/.../fbevents.js`              | marketing   |
+| Hotjar                  | `static.hotjar.com/c/hotjar-...`                    | analytics   |
+| Linkedin Insight        | `snap.licdn.com/li.lms-analytics/insight.min.js`    | marketing   |
+| Intercom / Drift / etc  | various                                             | varies      |
+
+Mark each with the category it should belong to in your new setup. Don't worry about Google Consent Mode mapping yet; that's handled by the engine's default mapping for `analytics` / `marketing` categories.
+
+## Mapping categories
+
+Privion treats categories as **opaque ids** — there's no "this is the analytics category" magic. The mapping between vendor → category is up to you.
+
+A common, regulator-friendly set:
+
+```ts
+categories: [
+  { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+  { id: 'functional', label: 'Functional' },   // chat widgets, embedded videos
+  { id: 'analytics', label: 'Analytics' },     // GA, Hotjar, Mixpanel
+  { id: 'marketing', label: 'Marketing' },     // Google Ads, Meta, LinkedIn
+]
+```
+
+A simpler 2-category version that some EU regulators accept:
+
+```ts
+categories: [
+  { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+  { id: 'optional', label: 'All other tracking' },
+]
+```
+
+Vendor-specific:
+
+```ts
+categories: [
+  { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+  { id: 'google_analytics', label: 'Google Analytics' },
+  { id: 'google_ads', label: 'Google Ads' },
+  { id: 'meta', label: 'Meta (Facebook/Instagram)' },
+  { id: 'linkedin', label: 'LinkedIn' },
+]
+```
+
+Granular is more user-respecting but also more complexity. Most consumers land on 3-4 categories.
+
+## Preserving existing decisions
+
+If your previous library stored a cookie / localStorage entry users have already interacted with, you can read it on engine init and seed Privion's state. This avoids re-prompting everyone.
+
+```ts
+function migrateFromOldCookie(): ConsentState | null {
+  const old = document.cookie.split(';')
+    .find((c) => c.trim().startsWith('old_consent='));
+  if (!old) return null;
+
+  // Parse the old library's format
+  const parsed = JSON.parse(decodeURIComponent(old.split('=')[1]));
+
+  return {
+    categories: {
+      necessary: 'granted',
+      analytics: parsed.analytics ? 'granted' : 'denied',
+      marketing: parsed.marketing ? 'granted' : 'denied',
+    },
+    updatedAt: new Date(parsed.timestamp ?? Date.now()).toISOString(),
+    version: 1,
+    source: 'preferences', // pretend the user had configured this
+    userDecided: true,     // → banner stays hidden
+  };
+}
+
+// Seed before construction by writing to the new storage key
+const migrated = migrateFromOldCookie();
+if (migrated) {
+  localStorage.setItem('privion-consent', JSON.stringify(migrated));
+}
+
+const consent = createPrivionConsent({
+  version: 1,
+  categories: [...],
+  storage: { type: 'localStorage' },
+});
+
+// Optional: delete the old cookie now that we've imported it
+document.cookie = 'old_consent=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+```
+
+<Aside type="caution" title="Treat unclear states as 'unknown', not 'granted'">
+  If you can't confidently determine the user's previous decision, leave the category as `'unknown'` and let the banner re-prompt. Don't default to `'granted'` just to suppress the banner — that's not lawful consent.
+</Aside>
+
+## Removing the old library
+
+Generally a three-step removal:
+
+1. **Stop loading the old library's script.** Just remove the `<script src="...">` from your `<head>`.
+2. **Stop putting the old library's attributes on tracking scripts.** E.g. CookieYes uses `<script data-cookieyes="cookieyes-analytics">`; switch to `<script type="privion" privion-category="analytics">`.
+3. **Delete the migration code after a grace period.** Once you're confident every active user has been migrated (cookies expire, localStorage propagates), drop the `migrateFromOldCookie` function. Keep the deletion code (`document.cookie = 'old_consent=...'`) for a while longer to clean up stragglers.
+
+## Vendor cheat-sheet
+
+How each common library's attributes map to Privion's:
+
+| Library      | Their attribute                              | Privion equivalent                            |
+| ------------ | -------------------------------------------- | --------------------------------------------- |
+| CookieYes    | `<script data-cookieyes="cookieyes-analytics">`  | `<script type="privion" privion-category="analytics">` |
+| Cookiebot    | `<script data-cookieconsent="statistics">`   | `<script type="privion" privion-category="analytics">` |
+| Osano        | `<script data-category="analytics">`         | `<script type="privion" privion-category="analytics">` |
+| OneTrust     | `<script class="optanon-category-C0002">`    | `<script type="privion" privion-category="analytics">` |
+| Iubenda      | `<script data-iub-script="purposes=4,5">`    | `<script type="privion" privion-category="analytics,marketing">` |
+
+For iframes:
+
+| Library      | Their pattern                                 | Privion equivalent                                  |
+| ------------ | --------------------------------------------- | --------------------------------------------------- |
+| CookieYes    | iframe with `data-cookieyes-src`              | `<iframe privion-src="..." privion-category="..." src="about:blank">` |
+| Cookiebot    | iframe with `data-src` + `data-consent`       | same                                                |
+
+The runtime semantics are essentially identical — the script element stays in the DOM as a marker, and on consent grant a real executable script is created with the source attributes.
+
+## What you lose by switching
+
+- **Vendor scanning.** Tools like Cookiebot auto-scan your site and tell you what trackers exist. Privion expects you to know your own stack.
+- **Audit dashboards.** Cookiebot / OneTrust provide hosted dashboards. With Privion, your backend (or analytics platform) holds the logs.
+- **TCF v2.2 vendor signaling.** Not in v1.x.
+
+## What you gain
+
+- **No external script.** Privion is fully self-hosted; no third-party JS on your critical path.
+- **No per-page-view cost.** Self-hosted libraries have no usage-based pricing.
+- **Source-available.** MIT-licensed; fork it if you need.
+- **Framework-native ergonomics.** React hooks, Astro components, TypeScript types.
+
+## See also
+
+- [Quick start](/guides/quick-start/) — once you've planned the migration
+- [Storage / migrations](/guides/storage/#migrations) — for transforming stored state across `config.version` bumps once you're on Privion

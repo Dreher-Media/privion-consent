@@ -1,0 +1,124 @@
+---
+title: Installation
+description: Pick the right packages for your stack.
+---
+
+import { Tabs, TabItem, Aside, Steps } from '@astrojs/starlight/components';
+
+## Which packages do I need?
+
+The library is split into four packages so you only ship what you need. Most consumers need exactly two:
+
+| Your project                              | Install                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------- |
+| Plain HTML / non-framework JavaScript     | `@privion-consent/core` + `@privion-consent/dom`                 |
+| React 18+ (CRA, Vite-React, Next.js, …)   | `@privion-consent/react` (pulls core transitively)               |
+| Astro 4 / Astro 5                         | `@privion-consent/astro` + `@privion-consent/dom`                |
+| React Native / Node-only / CLI            | `@privion-consent/core` only — no DOM bindings                   |
+
+<Aside type="tip" title="Astro + React islands?">
+  If your Astro project already uses `@astrojs/react`, you *can* use `@privion-consent/react` directly with `client:only="react"`. The native `.astro` components are recommended because they ship zero React runtime and SSR cleanly, but the React bindings work if you want hooks like `useConsentI18n` inside an island.
+</Aside>
+
+## Install
+
+<Tabs syncKey="pkg-manager">
+<TabItem label="pnpm">
+
+```bash
+# Vanilla
+pnpm add @privion-consent/core @privion-consent/dom
+
+# React
+pnpm add @privion-consent/react
+
+# Astro
+pnpm add @privion-consent/astro @privion-consent/dom
+```
+
+</TabItem>
+<TabItem label="npm">
+
+```bash
+# Vanilla
+npm install @privion-consent/core @privion-consent/dom
+
+# React
+npm install @privion-consent/react
+
+# Astro
+npm install @privion-consent/astro @privion-consent/dom
+```
+
+</TabItem>
+<TabItem label="yarn">
+
+```bash
+# Vanilla
+yarn add @privion-consent/core @privion-consent/dom
+
+# React
+yarn add @privion-consent/react
+
+# Astro
+yarn add @privion-consent/astro @privion-consent/dom
+```
+
+</TabItem>
+<TabItem label="bun">
+
+```bash
+# Vanilla
+bun add @privion-consent/core @privion-consent/dom
+
+# React
+bun add @privion-consent/react
+
+# Astro
+bun add @privion-consent/astro @privion-consent/dom
+```
+
+</TabItem>
+</Tabs>
+
+## Compatibility matrix
+
+| Runtime  | Minimum version       | Notes                                          |
+| -------- | --------------------- | ---------------------------------------------- |
+| Node     | `>=18.0.0`            | Build / test only. The library runs in browsers. |
+| React    | `>=18.0.0`            | Peer-dep on `@privion-consent/react`.          |
+| Astro    | `^4.16.0` or `^5.0.0` | Peer-dep on `@privion-consent/astro`. CI-tested against both. |
+| Browsers | ES2020-compatible     | No IE 11 / legacy Edge polyfills.              |
+
+## Default styles (optional)
+
+The bundled banner / preferences components are headless. Import the opt-in stylesheet from any binding for a working theme — themable via CSS custom properties:
+
+```ts
+import '@privion-consent/dom/styles.css';
+```
+
+```html
+<!-- Vanilla without bundler -->
+<link rel="stylesheet" href="https://unpkg.com/@privion-consent/dom/dist/styles.css" />
+```
+
+See [Default styles](/reference/styles/) for the full token list and dark-mode behavior.
+
+## TypeScript
+
+Every package ships its own `.d.ts` files — no separate `@types/*` package needed. Targets `ES2020` and uses `moduleResolution: bundler` patterns; if your tsconfig is older, set `"moduleResolution": "bundler"` or `"node16"`.
+
+## Versioning
+
+All four packages follow [semver](https://semver.org/). Breaking changes are documented in the [Migration guide](/reference/migration/). Internal `workspace:*` deps are bumped together via release-please's `node-workspace` plugin, so upgrading one Privion package typically means upgrading them all to the same minor line.
+
+## Next
+
+<Steps>
+
+1. Got the packages installed? Head to the [Quick start](/guides/quick-start/) for a working setup.
+
+2. Want to understand what's happening under the hood first? Start with the [Data model](/guides/data-model/).
+
+</Steps>

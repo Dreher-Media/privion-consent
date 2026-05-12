@@ -1,0 +1,167 @@
+---
+title: Default styles
+description: The opt-in stylesheet at @privion-consent/dom/styles.css — theme tokens, dark mode, and customization.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+```ts
+import '@privion-consent/dom/styles.css';
+```
+
+Opt-in. Components stay headless if you skip the import.
+
+The stylesheet targets **both** attribute conventions used across the bindings — unprefixed `[privion-banner]` (DOM adapter, Astro components) and prefixed `[data-privion-banner]` (React components) — so a single import covers any binding.
+
+## Theme tokens
+
+Every visual decision is exposed as a CSS custom property. Override them at `:root` (or any narrower scope) without touching the stylesheet itself.
+
+| Property                  | Default (light)                | Notes                                              |
+| ------------------------- | ------------------------------ | -------------------------------------------------- |
+| `--privion-bg`            | `#ffffff`                      | Banner / panel background                          |
+| `--privion-fg`            | `#111827`                      | Body text                                          |
+| `--privion-muted`         | `#6b7280`                      | Secondary text (descriptions, helper labels)       |
+| `--privion-border`        | `#e5e7eb`                      | Borders between toggle rows / panel edges          |
+| `--privion-accent`        | `#2563eb`                      | Primary buttons (Accept all, Save preferences)     |
+| `--privion-accent-fg`     | `#ffffff`                      | Text on primary buttons                            |
+| `--privion-radius`        | `0.75rem`                      | Banner / panel corner radius                       |
+| `--privion-shadow`        | `0 10px 30px rgb(0 0 0 / 12%)` | Banner / panel drop shadow                         |
+| `--privion-z-banner`      | `1000`                         | Banner `z-index`                                   |
+| `--privion-z-preferences` | `1001`                         | Preferences modal `z-index`                        |
+| `--privion-backdrop`      | `rgb(15 23 42 / 50%)`          | Preferences modal backdrop                         |
+
+## Dark mode
+
+Two routes:
+
+<Tabs syncKey="dark-mode">
+<TabItem label="Automatic (prefers-color-scheme)">
+
+Out of the box, the stylesheet honors the OS preference via `@media (prefers-color-scheme: dark)`. No code on your side.
+
+</TabItem>
+<TabItem label="Force a theme">
+
+Set `data-privion-theme` on `<html>` to pin a theme regardless of OS preference:
+
+```html
+<html data-privion-theme="dark">...</html>
+<html data-privion-theme="light">...</html>
+```
+
+Useful for theme-toggle UIs where users override the system preference inside your app.
+
+</TabItem>
+</Tabs>
+
+## Customizing
+
+### A few tweaks
+
+Redefine specific tokens on `:root`:
+
+```css
+:root {
+  --privion-accent: #7c3aed;
+  --privion-accent-fg: #ffffff;
+  --privion-radius: 0;
+}
+```
+
+### Scoped overrides
+
+For pages or sections where you want a different look:
+
+```css
+.brand-section {
+  --privion-accent: #ec4899;
+  --privion-radius: 1.5rem;
+}
+```
+
+Any banner / preferences rendered inside `.brand-section` picks up the override.
+
+### Fully custom CSS
+
+Skip the import entirely and target the attribute selectors:
+
+```css
+[privion-banner],
+[data-privion-banner] {
+  position: fixed;
+  bottom: 1rem;
+  /* your design */
+}
+```
+
+The DOM adapter takes care of show/hide via the `hidden` attribute. Your CSS doesn't need to know about consent state — just target the elements.
+
+### Mixing with the bundled stylesheet
+
+Import the bundled stylesheet, then add overriding rules:
+
+```css
+@import '@privion-consent/dom/styles.css';
+
+/* Stretch banner to full viewport width */
+[privion-banner],
+[data-privion-banner] {
+  inset: auto 0 0 0;
+  max-width: none;
+  border-radius: 0;
+}
+```
+
+## Layout details
+
+### Banner
+
+```text
+fixed; inset: auto 1rem 1rem 1rem; max-width: 720px; margin-inline: auto;
+display: flex; flex-wrap: wrap; gap: 0.75rem;
+padding: 1rem 1.25rem; border-radius: var(--privion-radius);
+background: var(--privion-bg); color: var(--privion-fg);
+box-shadow: var(--privion-shadow); z-index: var(--privion-z-banner);
+```
+
+On mobile (width &lt; 720px) the banner stretches to viewport width minus 2rem of padding. The flex-wrap means buttons stack when there isn't horizontal space.
+
+### Preferences modal
+
+```text
+fixed; inset: 0; padding: 1.5rem; background: var(--privion-backdrop);
+display: flex; justify-content: center; align-items: flex-start;
+z-index: var(--privion-z-preferences);
+```
+
+The inner panel is centered horizontally, anchored 4rem from the top so it doesn't jump on tall content.
+
+### Buttons
+
+```text
+font: inherit; cursor: pointer; border-radius: var(--privion-radius);
+padding: 0.5rem 1rem; border: 1px solid var(--privion-border);
+background: transparent; color: inherit;
+```
+
+Primary button (`[privion-accept-all]` / `[privion-save-preferences]`):
+
+```text
+background: var(--privion-accent); color: var(--privion-accent-fg);
+border-color: transparent;
+```
+
+## Accessibility
+
+The stylesheet provides reasonable defaults but the markup is your responsibility. Recommendations:
+
+- The banner is a `<div>` with `role="region" aria-label="Privacy"`. Add these to your markup if you don't use the bundled React components.
+- The preferences modal should be focus-trapped. `<dialog>` is the simplest path; the React bindings render plain `<div>` for max compatibility but you can wrap your own.
+- Keyboard navigation works out of the box — buttons are real `<button>` elements, checkboxes are real `<input type="checkbox">`.
+- Color contrast: the default accent (`#2563eb`) has 5.1:1 contrast against white; the dark-mode accent (`#3b82f6`) has 4.7:1 against `#0b1220`. Both clear WCAG AA.
+
+## Reference
+
+- [Source](https://github.com/Dreher-Media/privion-consent/blob/main/packages/consent-dom/src/styles.css)
+- [Specification §12 — Default styles](/reference/specification/#default-styles-opt-in)

@@ -1,0 +1,172 @@
+---
+title: Resolve region from a Cloudflare Worker
+description: Read the visitor's country from the Cloudflare runtime and pass it to the consent engine.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## Goal
+
+Detect the visitor's country server-side via Cloudflare's `request.cf.country` and pass it to the consent engine so EU/UK/CH visitors get opt-in defaults and the rest of the world gets opt-out.
+
+## In an Astro project on Cloudflare Pages
+
+The `@privion-consent/astro` package already does this — `resolveRegion(Astro.request.headers)` reads `cf-ipcountry` from the request automatically:
+
+```astro
+---
+// src/layouts/Layout.astro
+import PrivionScript from '@privion-consent/astro/PrivionScript.astro';
+import { resolveRegion } from '@privion-consent/astro/server';
+import type { PrivionConsentConfig } from '@privion-consent/astro';
+
+const region = resolveRegion(Astro.request.headers); // 'DE', 'US', ...
+
+const config: PrivionConsentConfig = {
+  version: 1,
+  region,
+  regionRules: { DE: { mode: 'opt-in' }, GB: { mode: 'opt-in' }, /* ... */ },
+  defaultRegionMode: 'opt-out',
+  categories: [...],
+};
+---
+
+<PrivionScript config={config} />
+```
+
+For Cloudflare Pages + Astro, set `output: 'server'` (or `output: 'hybrid'` with the layout page marked dynamic) so `Astro.request.headers` is populated per request.
+
+## In a standalone Worker (no Astro)
+
+If you're not on Astro, read the region from `request.cf.country` inside the Worker, inject it into the HTML response, and the client reads it on boot:
+
+<Tabs syncKey="worker-pattern">
+<TabItem label="Meta tag">
+
+```ts
+// worker.ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const country = request.cf?.country ?? '';
+    const html = await getHtml(); // your template
+    return new Response(
+      html.replace(
+        '</head>',
+        `<meta name="x-privion-region" content="${country}"></head>`,
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    );
+  },
+};
+```
+
+```html
+<!-- in your HTML, after the meta tag -->
+<script type="module">
+  import { createPrivionConsent } from '@privion-consent/core';
+  import { initPrivionDom } from '@privion-consent/dom';
+
+  const region = document.querySelector('meta[name="x-privion-region"]')?.content || undefined;
+
+  const consent = createPrivionConsent({
+    version: 1,
+    region,
+    regionRules: { DE: { mode: 'opt-in' }, GB: { mode: 'opt-in' } },
+    defaultRegionMode: 'opt-out',
+    categories: [...],
+  });
+  initPrivionDom(consent);
+</script>
+```
+
+</TabItem>
+<TabItem label="Inline script var">
+
+```ts
+// worker.ts
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const country = JSON.stringify(request.cf?.country ?? null);
+    const html = await getHtml();
+    return new Response(
+      html.replace(
+        '</head>',
+        `<script>window.__region=${country}</script></head>`,
+      ),
+      { headers: { 'content-type': 'text/html' } },
+    );
+  },
+};
+```
+
+```html
+<script type="module">
+  import { createPrivionConsent } from '@privion-consent/core';
+  // ...
+  const consent = createPrivionConsent({
+    region: window.__region ?? undefined,
+    // ...
+  });
+</script>
+```
+
+</TabItem>
+<TabItem label="HTMLRewriter">
+
+```ts
+// worker.ts — uses Cloudflare's HTMLRewriter for cleaner injection
+class RegionInjector {
+  constructor(private region: string) {}
+  element(el: Element) {
+    el.append(`<meta name="x-privion-region" content="${this.region}">`, { html: true });
+  }
+}
+
+export default {
+  async fetch(request: Request): Promise<Response> {
+    const response = await fetch(request);
+    return new HTMLRewriter()
+      .on('head', new RegionInjector(request.cf?.country ?? ''))
+      .transform(response);
+  },
+};
+```
+
+</TabItem>
+</Tabs>
+
+## Sentinel values
+
+Cloudflare returns `XX` for unclassifiable IPs and `T1` for Tor exits. Both should fall through to your default mode rather than being treated as real countries.
+
+The `@privion-consent/astro/server` `resolveRegion` helper skips these automatically. If you roll your own resolution, do the same:
+
+```ts
+const cfCountry = request.cf?.country;
+const region = (cfCountry && !['XX', 'T1'].includes(cfCountry))
+  ? cfCountry
+  : undefined; // fall back to defaultRegionMode
+```
+
+## Caching considerations
+
+If you cache HTML responses, **don't cache across regions** — that defeats the point. Either:
+- Disable HTML caching entirely (typical for consent-bearing pages anyway).
+- Cache per-region via a `Vary` header or split cache key including `request.cf.country`.
+
+In Cloudflare Workers, the simplest path is to never set `Cache-Control` on the HTML response. The static assets (JS, CSS) are cached at the asset level by URL — same across regions.
+
+## Testing locally
+
+`request.cf` is `undefined` outside of the Cloudflare runtime. For local dev:
+
+```ts
+const country = request.cf?.country ?? request.headers.get('x-mock-region') ?? '';
+```
+
+Then hit the dev server with `curl -H 'x-mock-region: DE' http://localhost:8787/` to simulate.
+
+## See also
+
+- [Regions & i18n](/guides/regions-i18n/) — full region-resolution guide
+- [Cloudflare: `request.cf` reference](https://developers.cloudflare.com/workers/runtime-apis/request/#incomingrequestcfproperties)

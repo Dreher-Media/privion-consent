@@ -1,0 +1,177 @@
+---
+title: Google Consent Mode v2
+description: basic vs advanced semantics, the default mapping table, and how the library bridges to gtag / dataLayer.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+If you load Google Analytics, Google Ads, or anything from `googletagmanager.com`, you need to tell those tags about consent — that's what Google Consent Mode v2 is for. The library handles the protocol bridge so your job is just to configure the mode and map your categories.
+
+```ts
+const consent = createPrivionConsent({
+  // ...
+  googleConsentMode: { mode: 'advanced' },
+});
+```
+
+## Mode: basic vs advanced
+
+<Tabs syncKey="gcm-mode">
+<TabItem label="basic">
+
+The library does **not** announce a `default` payload before the user makes a choice. Host apps in basic mode block Google tags entirely (typically via `<script type="privion">`) until consent, so any pre-consent `gtag('consent', 'default', ...)` would be a no-op.
+
+```text
+page load     →   (nothing emitted)
+user clicks   →   gtag('consent', 'update', { ad_storage: 'granted', ... })
+                  AND privion-consent re-activates blocked scripts
+```
+
+When to use: simple sites that block all Google tracking until consent. The user sees no analytics activity at all before deciding.
+
+</TabItem>
+<TabItem label="advanced">
+
+The library emits `default` with the current mapping (typically all-denied for new visitors) **immediately on engine init**. Non-blocked Google tags switch into anonymized cookieless pings — collecting aggregated data without identifiers.
+
+```text
+page load     →   gtag('consent', 'default', { ad_storage: 'denied', ... })
+                  Google tags fire with cookieless pings (modeled conversions, etc.)
+user clicks   →   gtag('consent', 'update', { ad_storage: 'granted', ... })
+                  Tags switch to full tracking
+```
+
+When to use: Google-heavy sites where you want analytics coverage even from undecided visitors (conversion modeling, anonymized aggregates). Required for Google's "Consent Mode v2" certification path.
+
+</TabItem>
+</Tabs>
+
+<Aside type="tip" title="Returning visitors">
+  In both modes, a returning visitor whose state hydrates from storage with `userDecided: true` gets a single `update` (not `default`) on engine init. Their stored decision propagates immediately without first announcing an all-denied default that contradicts it.
+</Aside>
+
+## Mapping table
+
+The library computes a `GoogleConsentMapping` from `state.categories` and emits it. The default mapping when a category is granted:
+
+| Category id | GCM v2 fields set to `'granted'`                                 |
+| ----------- | ----------------------------------------------------------------- |
+| `analytics` | `analytics_storage`                                               |
+| `marketing` | `ad_storage`, `ad_user_data`, `ad_personalization`                |
+| anything else | (no default — declare per-category)                             |
+
+Fields not mapped by a granted category stay at `'denied'`. The full `GoogleConsentMapping`:
+
+```ts
+interface GoogleConsentMapping {
+  ad_storage: ConsentStatus;
+  analytics_storage: ConsentStatus;
+  ad_user_data: ConsentStatus;
+  ad_personalization: ConsentStatus;
+}
+```
+
+## Per-category overrides
+
+Override the defaults via `ConsentCategoryConfig.googleMapping`:
+
+```ts
+categories: [
+  {
+    id: 'analytics',
+    label: 'Analytics',
+    // Default would set only analytics_storage. Add ad_user_data so granting
+    // analytics also enables user-level ad measurement.
+    googleMapping: {
+      analytics_storage: 'granted',
+      ad_user_data: 'granted',
+    },
+  },
+  {
+    id: 'personalization',
+    label: 'Personalized ads',
+    // No default mapping for an unknown category id, so the per-category
+    // mapping is the *only* thing controlling these fields.
+    googleMapping: {
+      ad_personalization: 'granted',
+    },
+  },
+];
+```
+
+When multiple granted categories map to the same field, **the last one wins** (categories are processed in array order). If you need ANY-granted semantics across multiple categories, model that in your category structure rather than expecting the engine to OR them.
+
+## Transport
+
+The library tries three transports in order, stopping at the first available:
+
+```text
+1. window.gtag                  →  gtag('consent', command, mapping)
+2. window.dataLayer (Array)     →  dataLayer.push({ event: 'consent_' + command, ...mapping })
+3. CustomEvent on window        →  dispatchEvent('privion:google-consent-mode', { command, mapping, mode })
+```
+
+The third fallback exists for consumers that don't load gtag/GTM at all but still want to observe the signal — for example, to push the mapping into a non-Google analytics tool that mirrors the GCM API.
+
+### Custom event payload
+
+```ts
+window.addEventListener('privion:google-consent-mode', (event: CustomEvent) => {
+  const { command, mapping, mode } = event.detail;
+  // command: 'default' | 'update'
+  // mapping: GoogleConsentMapping
+  // mode: 'basic' | 'advanced'
+});
+```
+
+## When does the library emit?
+
+```text
+construct + mode='advanced' + userDecided=false   →  default
+construct + mode='advanced' + userDecided=true    →  update    (returning user)
+construct + mode='basic'    + userDecided=false   →  (nothing)
+construct + mode='basic'    + userDecided=true    →  update    (returning user)
+setCategory / setMany / acceptAll / rejectAll     →  update    (both modes)
+reset                                              →  update with the post-reset mapping
+```
+
+## Verifying it works
+
+Open DevTools → Network → filter by `google-analytics.com` / `googletagmanager.com`. Or in the console:
+
+```ts
+// Stub a gtag spy
+const calls = [];
+window.gtag = (...args) => calls.push(args);
+
+// Trigger consent
+consent.acceptAll();
+
+console.log(calls);
+// [['consent', 'update', { ad_storage: 'granted', analytics_storage: 'granted', ... }]]
+```
+
+For a dataLayer-only setup:
+
+```ts
+window.dataLayer ||= [];
+const pushes = [];
+const orig = window.dataLayer.push.bind(window.dataLayer);
+window.dataLayer.push = (entry) => { pushes.push(entry); return orig(entry); };
+
+consent.acceptAll();
+console.log(pushes);
+// [{ event: 'consent_update', ad_storage: 'granted', ... }]
+```
+
+## Common pitfalls
+
+- **You declared `googleConsentMode: { mode: 'advanced' }` but the default never fires.** Check `state.userDecided` — if it's `true` on init (you have stored consent), the library emits `update` instead of `default`. That's intentional. To re-trigger `default`, `consent.reset()` first.
+- **`gtag` isn't on `window` when the engine constructs.** The library falls through to `dataLayer.push`, which gtag picks up when it later initializes (gtag drains dataLayer on load). This is the recommended pattern.
+- **Multiple categories overwrite each other's mapping.** Categories are processed in array order. If `analytics` and `marketing` both map to `ad_user_data`, only the last one's value wins. Model dependencies explicitly.
+
+## Reference
+
+- [Google Consent Mode v2 documentation](https://developers.google.com/tag-platform/security/guides/consent)
+- [Specification §5 — Google Consent Mode v2](/reference/specification/#google-consent-mode-v2)
+- [Recipe: Block Google Analytics until consent](/recipes/google-analytics/)

@@ -1,0 +1,209 @@
+---
+title: Attribute schema
+description: Every privion-* attribute the DOM adapter recognizes, with examples and edge-case notes.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The `@privion-consent/dom` adapter inspects the page for the attributes below. They're framework-agnostic — anything that doesn't strip them at build time works (Astro, vanilla HTML, server-rendered React, etc.).
+
+`initPrivionDom(consent)` scans on mount AND sets up a `MutationObserver` so late-injected elements activate without a re-init. The returned `PrivionDomHandle.destroy()` disconnects every observer.
+
+## Element-level: gating
+
+### `<script type="privion">`
+
+Blocks a script until consent is granted. `type="privion"` is not a recognized JavaScript MIME, so the browser refuses to execute it. When the matching categories are granted, the adapter creates a **new** executable `<script>` element copying every relevant attribute (`src`, inline `textContent`, `async`, `defer`, `nonce`, `crossOrigin`) and inserts it right after the original.
+
+```html
+<script
+  type="privion"
+  privion-category="analytics"
+  src="https://www.googletagmanager.com/gtag/js?id=G-XXX"
+></script>
+```
+
+Multiple categories (any-mode):
+
+```html
+<script type="privion" privion-category="analytics,marketing" src="..."></script>
+```
+
+Inline script:
+
+```html
+<script type="privion" privion-category="analytics">
+  console.log('analytics granted');
+  // gtag('event', ...);
+</script>
+```
+
+**One-shot activation.** Once activated, the original stays in place but inert. Toggling the category back to `denied` does **not** unload the now-running script — that's a host concern (typically a page reload). This matches how third-party tags actually behave in practice; truly tearing down GA or GTM mid-session is unreliable.
+
+### `<iframe privion-src=...>`
+
+Block an iframe until consent. Render with `src="about:blank"` so it loads nothing pre-consent. The real URL lives in `privion-src`.
+
+```html
+<iframe
+  privion-category="marketing"
+  privion-src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+  src="about:blank"
+  allow="autoplay; encrypted-media; picture-in-picture"
+  allowfullscreen
+></iframe>
+```
+
+On grant, the adapter writes `iframe.src = realSrc`. Also one-shot.
+
+### `[privion="..."]` (visibility)
+
+Show / hide an element based on a small expression language:
+
+```html
+<!-- Visible when analytics granted -->
+<div privion="analytics">...</div>
+
+<!-- Visible when analytics NOT granted -->
+<div privion="!analytics">...</div>
+
+<!-- Visible when analytics granted AND marketing not granted -->
+<div privion="analytics,!marketing">...</div>
+
+<!-- Visible when ANY of analytics, marketing granted (any-mode default) -->
+<div privion="analytics marketing">...</div>
+
+<!-- Always-visible (no condition) — equivalent to omitting the attribute -->
+<div privion="">...</div>
+```
+
+#### Expression syntax
+
+Comma- or space-separated tokens:
+
+- A bare token requires that category to be `granted`.
+- `!category` requires the category to **not** be `granted` (treats `denied` and `unknown` the same).
+- The adapter computes: *(any positive token granted) AND (no negative token granted)*.
+
+The original `style.display` is captured on first scan and restored when the element becomes visible. Set `style.display: none` in your CSS to delay-render — or use `hidden` attribute, which the adapter also respects.
+
+<Aside type="caution" title="Visibility is purely cosmetic">
+  Hiding via `display: none` doesn't prevent embedded `<script>` from executing or `<iframe>` from loading their `src`. For real blocking, use `[type="privion"]` or `[privion-src]` patterns. The `[privion]` attribute is for conditional CONTENT, not conditional BLOCKING.
+</Aside>
+
+## Element-level: UI
+
+### `[privion-banner]`
+
+The banner container. The adapter unhides it on `ready` if `state.userDecided === false`. Hide via `hidden` attribute on initial render.
+
+```html
+<div privion-banner hidden>
+  <p>We use cookies.</p>
+  <!-- buttons -->
+</div>
+```
+
+The adapter watches `state.userDecided` and toggles the `hidden` attribute accordingly — no listener wiring required.
+
+### `[privion-preferences]`
+
+The preferences modal container. Hidden initially; un-hidden when a `[privion-open-preferences]` button is clicked.
+
+```html
+<div privion-preferences hidden>
+  <h2>Privacy preferences</h2>
+  <!-- toggles -->
+  <button privion-save-preferences>Save</button>
+</div>
+```
+
+The adapter also re-hides the modal after `[privion-save-preferences]` fires.
+
+### Action buttons
+
+| Attribute                       | Click effect                                                       |
+| ------------------------------- | ------------------------------------------------------------------ |
+| `[privion-accept-all]`          | Calls `consent.acceptAll()`. Hides banner + preferences.           |
+| `[privion-reject-all]`          | Calls `consent.rejectAll()`. Hides banner + preferences.           |
+| `[privion-open-preferences]`    | Un-hides `[privion-preferences]`.                                  |
+| `[privion-save-preferences]`    | Collects every `[privion-toggle]` checkbox, calls `setMany(updates, 'preferences')`. Hides preferences. |
+
+Multiple buttons with the same attribute work — useful for "open preferences" links scattered throughout the page (footer, privacy policy, in-content). All call `consent.acceptAll()` / etc., which is idempotent on the engine.
+
+### `[privion-toggle="<categoryId>"]`
+
+A toggle input for an optional category. The adapter:
+- Sets `input.checked` from `state.categories[id]` on `ready`.
+- Reads the value back when `[privion-save-preferences]` fires.
+
+```html
+<label>
+  <input type="checkbox" privion-toggle="analytics" />
+  Analytics
+</label>
+```
+
+Only `type="checkbox"` is supported. For radio buttons or selects, use the engine API directly:
+
+```html
+<select onchange="consent.setCategory('analytics', this.value, 'preferences')">
+  <option value="granted">Yes</option>
+  <option value="denied">No</option>
+</select>
+```
+
+### `[privion-required="<categoryId>"]`
+
+A toggle for a `required: true` category. The adapter:
+- Auto-disables the checkbox.
+- Force-checks it.
+
+```html
+<label>
+  <input type="checkbox" privion-required="necessary" disabled checked />
+  Necessary
+</label>
+```
+
+The `disabled` / `checked` attributes are redundant — the adapter sets them — but include them for SSR-correct initial paint.
+
+## Selectors quick reference
+
+```css
+[type="privion"]               /* blocked scripts */
+[privion-src]                  /* blocked iframes (when also has privion-category) */
+[privion]                      /* visibility-controlled elements */
+
+[privion-banner]               /* banner container */
+[privion-preferences]          /* preferences container */
+[privion-accept-all]
+[privion-reject-all]
+[privion-open-preferences]
+[privion-save-preferences]
+[privion-toggle="<id>"]
+[privion-required="<id>"]
+
+[data-privion-banner]          /* React-rendered banner (same selectors as above with data- prefix) */
+[data-privion-preferences]
+[data-privion-accept-all]
+[data-privion-reject-all]
+[data-privion-open-preferences]
+[data-privion-save-preferences]
+[data-privion-toggle="<id>"]
+[data-privion-required="<id>"]
+```
+
+The React bindings emit `data-privion-*` attributes; the DOM adapter and Astro components emit unprefixed `privion-*`. The bundled stylesheet (`@privion-consent/dom/styles.css`) targets both styles, so a single CSS import covers any binding.
+
+## Common mistakes
+
+- **Forgetting `is:inline` on Astro `<script type="privion">`.** Astro's bundler ignores unknown script types but still rewrites `src` for known modules. Add `is:inline` to preserve the source URL.
+- **Putting `privion-category` on the iframe without `privion-src`.** The adapter only activates iframes that have both `privion-category` and `privion-src`. If you only have `privion-category`, nothing happens.
+- **Using `[privion="!"]` (empty negation).** This is parsed as the empty token, treated as no condition — always-visible. To require "user has not decided yet", subscribe to engine state from your own code.
+- **Toggling on `change` instead of waiting for save.** `[privion-toggle]` is read at `[privion-save-preferences]` time, not on `change`. If you want each toggle change to immediately apply, wire `change` handlers manually with `consent.setCategory(id, val, 'preferences')`.
+
+## Reference
+
+- [API reference — `initPrivionDom`](/reference/api/#initpriviondom)
+- [Specification §3 — Attribute schema](/reference/specification/#attribute-schema-dom-adapter)

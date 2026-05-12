@@ -1,0 +1,268 @@
+---
+title: Customize the banner and preferences UI
+description: Override the bundled styles, build a completely custom banner, or theme the existing one.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+## Three levels of customization
+
+| Level                                | Time investment | When to pick                           |
+| ------------------------------------ | --------------- | -------------------------------------- |
+| Theme tokens                          | 5 minutes      | Brand colors, corner radius, dark mode |
+| Override the bundled stylesheet      | 30 minutes     | Different layout, custom button styles |
+| Skip the stylesheet entirely         | 1-2 hours      | Fully custom design, design-system fit |
+
+## Level 1: Theme tokens
+
+Redefine CSS custom properties:
+
+```css
+:root {
+  --privion-accent: #7c3aed;
+  --privion-accent-fg: #ffffff;
+  --privion-radius: 0;
+  --privion-bg: #fafafa;
+  --privion-fg: #1a1a1a;
+}
+```
+
+Full list at [Default styles](/reference/styles/). The bundled stylesheet uses these tokens for every color / size decision so a few overrides at `:root` reshape the entire look.
+
+### Brand-section scoped
+
+```css
+.brand-section {
+  --privion-accent: #ec4899;
+  --privion-radius: 1.5rem;
+}
+```
+
+Any banner rendered inside `.brand-section` picks up the override. Useful for landing pages with bespoke palettes.
+
+### Dark mode override
+
+The stylesheet honors `prefers-color-scheme` automatically. To force a theme:
+
+```html
+<html data-privion-theme="dark">
+<html data-privion-theme="light">
+```
+
+For a theme-toggle button:
+
+```ts
+function setTheme(theme: 'light' | 'dark' | 'auto') {
+  if (theme === 'auto') {
+    document.documentElement.removeAttribute('data-privion-theme');
+  } else {
+    document.documentElement.setAttribute('data-privion-theme', theme);
+  }
+}
+```
+
+## Level 2: Override the bundled stylesheet
+
+Import the stylesheet, then add rules that win specificity-wise:
+
+```css
+@import '@privion-consent/dom/styles.css';
+
+/* Stretch banner full width */
+[privion-banner],
+[data-privion-banner] {
+  inset: auto 0 0 0;
+  max-width: none;
+  border-radius: 0;
+  padding: 1.5rem 2rem;
+}
+
+/* Stack buttons vertically on mobile */
+@media (max-width: 480px) {
+  [privion-banner] button,
+  [data-privion-banner] button {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+}
+
+/* Use a different shadow */
+[privion-banner],
+[data-privion-banner],
+[privion-preferences] > *,
+[data-privion-preferences] > * {
+  box-shadow: 0 4px 12px rgb(0 0 0 / 8%);
+}
+```
+
+The bundled selectors are deliberately low-specificity so most overrides need only the same selector.
+
+## Level 3: Fully custom CSS
+
+Skip the bundled stylesheet entirely. The DOM adapter handles show/hide via the `hidden` attribute; your CSS only needs to target the elements.
+
+<Tabs syncKey="custom-css-stack">
+<TabItem label="DOM / Astro">
+
+```html
+<style>
+  [privion-banner] {
+    /* your design */
+  }
+  [privion-banner][hidden] {
+    display: none;
+  }
+  [privion-preferences] {
+    /* your design */
+  }
+  [privion-preferences][hidden] {
+    display: none;
+  }
+  /* etc. */
+</style>
+```
+
+</TabItem>
+<TabItem label="React (CSS-in-JS)">
+
+The React components emit `data-privion-banner` / `data-privion-preferences`. Style them with whatever:
+
+```tsx
+import styled from 'styled-components';
+
+const StyledBanner = styled.div`
+  /* These rules apply to any [data-privion-banner] descendant */
+  [data-privion-banner] {
+    background: ${(p) => p.theme.colors.surface};
+    /* ... */
+  }
+`;
+```
+
+Or with Tailwind utility classes via a wrapper:
+
+```tsx
+<div className="[&_[data-privion-banner]]:bg-slate-900 [&_[data-privion-banner]]:text-white">
+  <ConsentBanner />
+</div>
+```
+
+</TabItem>
+</Tabs>
+
+## Building a completely different banner
+
+If the bundled banner shape doesn't fit your design, build your own from primitives. The engine doesn't care about the banner — only that `acceptAll` / `rejectAll` / `setMany` get called and that `state.userDecided` flips.
+
+<Tabs syncKey="custom-banner-stack">
+<TabItem label="React (full control)">
+
+```tsx
+import { useConsent, useConsentI18n } from '@privion-consent/react';
+
+function CustomBanner() {
+  const { consent, state } = useConsent();
+  const i18n = useConsentI18n();
+
+  if (state.userDecided) return null;
+
+  return (
+    <aside className="my-custom-banner">
+      <h2>{i18n.bannerTitle ?? 'Privacy'}</h2>
+      <p>{i18n.bannerBody}</p>
+      <div className="actions">
+        <button onClick={() => consent.rejectAll()}>{i18n.rejectAll}</button>
+        <button onClick={() => consent.acceptAll()}>{i18n.acceptAll}</button>
+      </div>
+    </aside>
+  );
+}
+```
+
+Drop in *instead of* `<ConsentBanner>`:
+
+```tsx
+<ConsentProvider config={config}>
+  <YourApp />
+  <CustomBanner />
+</ConsentProvider>
+```
+
+</TabItem>
+<TabItem label="DOM (full control)">
+
+```html
+<aside id="my-banner" hidden>
+  <h2>Privacy</h2>
+  <p>We respect your choices.</p>
+  <button id="my-reject">No tracking</button>
+  <button id="my-accept">Yes please</button>
+</aside>
+
+<script type="module">
+  import { createPrivionConsent } from '@privion-consent/core';
+  // No DOM adapter — pure manual wiring
+
+  const consent = createPrivionConsent({...});
+  const banner = document.getElementById('my-banner');
+
+  const updateVisibility = () => {
+    banner.hidden = consent.getState().userDecided;
+  };
+  consent.on('ready', updateVisibility);
+  consent.on('update', updateVisibility);
+
+  document.getElementById('my-accept').addEventListener('click', () => consent.acceptAll());
+  document.getElementById('my-reject').addEventListener('click', () => consent.rejectAll());
+</script>
+```
+
+You still want `initPrivionDom(consent)` if you have `[type="privion"]` scripts to gate — but for the banner itself, manual wiring is fine.
+
+</TabItem>
+</Tabs>
+
+<Aside type="tip" title="One thing the bundled components do that custom ones often miss">
+  The bundled banner renders with `hidden` set initially. The DOM adapter unhides it on `ready` only if `state.userDecided === false`. If you skip the initial `hidden` and rely purely on React rendering null, you can briefly flash an empty banner during hydration in some setups (Astro islands especially). Initial-`hidden` + adapter-unhide is the safer pattern.
+</Aside>
+
+## Custom preferences modal
+
+Same idea — render your own modal, call `setMany(updates, 'preferences')` on save:
+
+```tsx
+function CustomPreferences({ onClose }: { onClose: () => void }) {
+  const { consent, state } = useConsent();
+  const [draft, setDraft] = useState(state.categories);
+
+  const save = () => {
+    consent.setMany(draft, 'preferences');
+    onClose();
+  };
+
+  return (
+    <dialog open>
+      {Object.entries(draft).map(([id, status]) => (
+        <label key={id}>
+          <input
+            type="checkbox"
+            checked={status === 'granted'}
+            onChange={(e) =>
+              setDraft({ ...draft, [id]: e.target.checked ? 'granted' : 'denied' })
+            }
+          />
+          {id}
+        </label>
+      ))}
+      <button onClick={save}>Save</button>
+    </dialog>
+  );
+}
+```
+
+The `'preferences'` source argument is what flips `state.userDecided` to `true` and hides the banner — don't forget it.
+
+## See also
+
+- [Default styles reference](/reference/styles/) — every theme token
+- [Attribute schema](/reference/attribute-schema/) — what the bundled markup emits

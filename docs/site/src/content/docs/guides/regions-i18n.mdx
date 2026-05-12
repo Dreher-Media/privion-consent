@@ -1,0 +1,339 @@
+---
+title: Regions & i18n
+description: Map ISO country codes to opt-in / opt-out defaults; pick a UI locale; handle SSR header resolution.
+---
+
+import { Aside, Tabs, TabItem, Steps } from '@astrojs/starlight/components';
+
+This page covers two related-but-separate concerns:
+
+- **Regions** — *whether to show the banner at all*, controlled by ISO country codes mapped to opt-in / opt-out modes.
+- **i18n** — *what the banner says*, controlled by the locale passed to `<ConsentProvider>` (React) or your own template strings (vanilla / Astro).
+
+## Regions
+
+The library doesn't ship a geo database. You pass the resolved region (ISO 3166-1 alpha-2) into the config and provide a `regionRules` table:
+
+```ts
+createPrivionConsent({
+  version: 1,
+  region: 'DE',                              // resolved by your code
+  regionRules: {
+    DE: { mode: 'opt-in' },
+    AT: { mode: 'opt-in' },
+    FR: { mode: 'opt-in' },
+    NL: { mode: 'opt-in' },
+    GB: { mode: 'opt-in' },
+    CH: { mode: 'opt-in' },
+  },
+  defaultRegionMode: 'opt-out',              // fallback for unmatched regions
+  categories: [
+    { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+    { id: 'analytics', label: 'Analytics' },    // no defaultStatus — region decides
+    { id: 'marketing', label: 'Marketing' },
+  ],
+});
+```
+
+### What "mode" actually does
+
+| Mode       | Effect on categories without an explicit `defaultStatus`     | Banner behavior                  |
+| ---------- | ------------------------------------------------------------- | --------------------------------- |
+| `opt-in`   | Start as `'unknown'` — operational decisions treat as denied. | Always visible until decided.     |
+| `opt-out`  | Start as `'granted'`.                                         | Visible until decided (one-shot). |
+
+In both modes the banner shows on first visit. The difference is in the **initial state of operational categories** — whether analytics fires while the user hasn't decided yet.
+
+### Per-category overrides
+
+`defaultStatus` on a category always wins over the regional fallback:
+
+```ts
+categories: [
+  // Always granted, regardless of region — required to function.
+  { id: 'necessary', label: 'Necessary', required: true, defaultStatus: 'granted' },
+
+  // Always denied initially, regardless of region — extra-sensitive category.
+  { id: 'biometric', label: 'Biometric profiling', defaultStatus: 'denied' },
+
+  // Region decides — defaults to 'unknown' in opt-in regions, 'granted' in opt-out.
+  { id: 'analytics', label: 'Analytics' },
+],
+```
+
+### The `resolveRegionMode` helper
+
+Sometimes you want the resolved mode at runtime (e.g. for analytics tagging):
+
+```ts
+import { resolveRegionMode } from '@privion-consent/core';
+
+const mode = resolveRegionMode({
+  region: 'DE',
+  regionRules: { DE: { mode: 'opt-in' } },
+  defaultRegionMode: 'opt-out',
+});
+// 'opt-in'
+```
+
+## Resolving the user's region
+
+This is your responsibility — the library deliberately doesn't ship geo data. Common sources:
+
+<Tabs syncKey="region-source">
+<TabItem label="Astro (server)">
+
+The `@privion-consent/astro` package ships a `resolveRegion()` helper that reads from a configurable list of CDN headers:
+
+```astro
+---
+import { resolveRegion } from '@privion-consent/astro/server';
+const region = resolveRegion(Astro.request.headers);
+---
+```
+
+Default headers checked, in order:
+- `cf-ipcountry` (Cloudflare)
+- `x-vercel-ip-country` (Vercel)
+- `x-country` (Netlify)
+- `x-appengine-country` (App Engine)
+
+Cloudflare sentinels (`XX`, `T1`) are skipped automatically. Custom override:
+
+```ts
+resolveRegion(headers, {
+  headers: ['my-custom-region-header', 'cf-ipcountry'],
+  ignoreValues: ['XX', 'T1', 'EU'],
+});
+```
+
+</TabItem>
+<TabItem label="Next.js (server)">
+
+In a Next.js Server Component, the same headers are available via `next/headers`:
+
+```ts
+import { headers } from 'next/headers';
+
+export async function getRegion(): Promise<string | undefined> {
+  const h = await headers();
+  for (const name of ['cf-ipcountry', 'x-vercel-ip-country', 'x-country']) {
+    const v = h.get(name);
+    if (v && v !== 'XX' && v !== 'T1') return v.toUpperCase();
+  }
+  return undefined;
+}
+```
+
+Pass the result down to a Client Component that wraps `<ConsentProvider>`.
+
+</TabItem>
+<TabItem label="Cloudflare Worker">
+
+```ts
+export default {
+  async fetch(request: Request, env: Env) {
+    const region = request.cf?.country; // ISO 3166-1 alpha-2
+    // Inject `region` into the HTML response (meta tag, inline script, etc.)
+    // and read it on the client when constructing the engine.
+  },
+};
+```
+
+</TabItem>
+<TabItem label="Client-side fallback">
+
+If you can't resolve server-side, fall back to browser locale (rough approximation — only the language and sometimes the region):
+
+```ts
+function getRegionFromBrowserLocale(): string | undefined {
+  const locale = navigator.language; // e.g. 'de-DE', 'en-US'
+  const region = locale.split('-')[1];
+  return region?.toUpperCase();
+}
+```
+
+<Aside type="caution" title="Browser locale ≠ user location">
+  A German tourist in the US has `navigator.language: 'de-DE'`. Browser locale is good enough for setting *language* but not for *jurisdiction*. Prefer CDN headers when accuracy matters.
+</Aside>
+
+</TabItem>
+<TabItem label="No region resolution">
+
+If you don't resolve a region at all, leave `region` unset. The library falls back to `defaultRegionMode`:
+
+```ts
+createPrivionConsent({
+  // No region or regionRules
+  defaultRegionMode: 'opt-in', // safe default for everyone
+  categories: [...],
+});
+```
+
+This is the right call if you have a small audience, can't reliably detect region, or want to apply the strictest interpretation everywhere.
+
+</TabItem>
+</Tabs>
+
+## i18n (React)
+
+The React bindings ship four locales and a partial-override merge:
+
+```tsx
+import {
+  ConsentProvider,
+  enLocale,
+  deLocale,
+  frLocale,
+  esLocale,
+  mergeI18n,
+} from '@privion-consent/react';
+```
+
+### Picking a locale
+
+```tsx
+<ConsentProvider config={config} i18n={deLocale}>
+  ...
+</ConsentProvider>
+```
+
+Bundled locales cover the standard button labels and modal text:
+
+```ts
+interface ConsentI18n {
+  bannerTitle?: string;
+  bannerBody: string;
+  acceptAll: string;
+  rejectAll: string;
+  customize: string;
+  preferencesTitle: string;
+  preferencesBody?: string;
+  save: string;
+  alwaysOn: string;
+  categories?: Record<string, { label?: string; description?: string }>;
+}
+```
+
+### Partial overrides
+
+Pass a `Partial<ConsentI18n>` to override a few keys while inheriting the rest from English:
+
+```tsx
+<ConsentProvider
+  config={config}
+  i18n={{
+    acceptAll: 'Yes please',
+    rejectAll: 'No thanks',
+  }}
+>
+```
+
+For a full custom locale that builds on a bundled base, use `mergeI18n`:
+
+```tsx
+const customDE = mergeI18n(deLocale, {
+  bannerBody: 'Wir verwenden Cookies – unsere Variante.',
+  categories: {
+    analytics: { label: 'Statistiken', description: 'Hilft uns, die Website zu verbessern.' },
+  },
+});
+
+<ConsentProvider config={config} i18n={customDE}>
+```
+
+### Per-category overrides
+
+The `i18n.categories[id]` block overrides category labels and descriptions without modifying the engine config:
+
+```tsx
+i18n: {
+  ...deLocale,
+  categories: {
+    analytics: {
+      label: 'Statistik',
+      description: 'Erhebt aggregierte Nutzungsdaten.',
+    },
+    marketing: {
+      label: 'Personalisierung',
+    },
+  },
+}
+```
+
+The base category id stays `'analytics'` in code — only the display label changes per locale.
+
+### `useConsentI18n` hook
+
+Compose your own UI using the same string table:
+
+```tsx
+import { useConsentI18n } from '@privion-consent/react';
+
+function MyBanner() {
+  const i18n = useConsentI18n();
+  return <button>{i18n.acceptAll}</button>;
+}
+```
+
+The hook returns the merged locale (base + overrides). Any missing keys fall back to English.
+
+## i18n (vanilla / Astro)
+
+The vanilla / DOM / Astro bindings don't ship a locale layer — you render your own UI strings:
+
+```html
+<div privion-banner hidden>
+  <p>{{ bannerBody }}</p>
+  <button privion-reject-all>{{ rejectAll }}</button>
+  <button privion-accept-all>{{ acceptAll }}</button>
+</div>
+```
+
+Use whatever templating your stack provides (Astro's `Astro.props`, vanilla string templating, etc.). The engine doesn't care about labels — only about the `privion-*` attributes.
+
+## Common patterns
+
+### EU-only banner
+
+```ts
+createPrivionConsent({
+  region: resolvedRegion,
+  regionRules: Object.fromEntries(
+    ['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','GB','IS','LI','NO','CH']
+      .map((c) => [c, { mode: 'opt-in' as const }]),
+  ),
+  defaultRegionMode: 'opt-out',
+  categories: [...],
+});
+```
+
+For non-EU visitors, optional categories default to `'granted'` and the banner one-shots on first visit.
+
+### Always show the banner
+
+If you want every visitor to see the banner regardless of region (most conservative interpretation):
+
+```ts
+createPrivionConsent({
+  defaultRegionMode: 'opt-in', // no regionRules — applies to everyone
+  categories: [...],
+});
+```
+
+### Different copy per region
+
+```tsx
+const i18n = region === 'DE' ? deLocale
+            : region === 'FR' ? frLocale
+            : enLocale;
+
+<ConsentProvider config={config} i18n={i18n}>
+```
+
+## Reference
+
+- [Specification §6 — Region & defaults](/reference/specification/#region--defaults)
+- [API reference — `RegionMode` / `regionRules` / `resolveRegionMode`](/reference/api/#region--defaults)
+- [API reference — i18n](/reference/api/#i18n)
+- [Recipe: Resolve region from a Cloudflare worker](/recipes/cloudflare-region/)

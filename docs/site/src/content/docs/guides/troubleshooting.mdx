@@ -1,0 +1,201 @@
+---
+title: Troubleshooting
+description: Common failures and how to diagnose them.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Banner doesn't appear
+
+Most likely causes, in order:
+
+1. **`state.userDecided` is already true.** A stored decision is being hydrated. Check `localStorage` / cookies for `privion-consent`; if present, `consent.reset()` to re-prompt or just delete the entry manually for testing.
+2. **`[privion-banner]` element missing or wrong attribute.** The DOM adapter scans for `[privion-banner]` (no `data-` prefix) for vanilla / Astro components, and `[data-privion-banner]` for React components. If you hand-rolled the markup, double-check the attribute.
+3. **`initPrivionDom(consent)` was never called.** Without it nothing observes the engine; the banner won't be un-hidden. React's `<ConsentProvider>` calls it internally — for vanilla / Astro you must call it yourself.
+4. **The banner element has `display: none` from your own CSS.** The adapter toggles `hidden` (the HTML attribute), not `display`. A CSS rule like `.banner-wrapper { display: none }` overrides everything.
+
+Diagnostic:
+
+```ts
+const consent = window.__privionConsent; // or your variable
+console.log('userDecided:', consent.getState().userDecided);
+console.log('banner element:', document.querySelector('[privion-banner], [data-privion-banner]'));
+console.log('banner hidden attr:', document.querySelector('[privion-banner], [data-privion-banner]')?.hidden);
+```
+
+## Banner appears twice after route change
+
+You have two engines alive. On SPA navigation, the previous engine's `MutationObserver` is still watching the document — and so is the new one. See [Recipe: SPA route teardown](/recipes/spa-route-teardown/).
+
+Quick fix: call `dom.destroy()` in your route-cleanup before mounting a new engine.
+
+## Tracking script loads before consent
+
+The block-until-consent mechanism relies on `type="privion"` being a non-executable MIME type. Common ways this breaks:
+
+- **Bundler rewrites the attribute.** Webpack / Vite / Astro normally don't touch unknown script types, but some plugins do. Inspect the rendered HTML in DevTools and confirm the type is still `"privion"`.
+- **Server-side rendering escaped the attribute.** Some SSR setups strip non-standard HTML attributes. Check the raw HTML response.
+- **The `src` is on a non-privion `<script>` next to the privion one.** Easy mistake — only the script with `type="privion"` is blocked; a sibling normal script still runs.
+
+```html
+<!-- WRONG: only the second one is blocked -->
+<script src="https://analytics.example/track.js"></script>
+<script type="privion" privion-category="analytics" src="..."></script>
+
+<!-- RIGHT -->
+<script type="privion" privion-category="analytics" src="https://analytics.example/track.js"></script>
+```
+
+## Late-injected script doesn't activate
+
+The DOM adapter watches via `MutationObserver`. If your script is injected and *immediately* the bundle calls some setup function, there's a microtask gap where the adapter hasn't seen the new element yet:
+
+```ts
+// Race condition
+const s = document.createElement('script');
+s.type = 'privion';
+s.setAttribute('privion-category', 'analytics');
+s.src = '...';
+document.head.appendChild(s);
+
+// Adapter hasn't seen `s` yet on this tick
+otherCodeThatExpectsTheScriptToBeLive();
+```
+
+The adapter's MutationObserver fires asynchronously (microtask). If you need the activation to be synchronous, call `initPrivionDom`'s internals manually:
+
+```ts
+// Force a rescan after a sync DOM mutation
+document.head.appendChild(s);
+// Re-init isn't ideal but works as an escape hatch:
+const dom = initPrivionDom(consent); // re-scans current state
+```
+
+In practice the async-microtask delay isn't observable — pretty much every consumer wires the dependent code through `consent.on('update', ...)` anyway.
+
+## GCM `update` doesn't reach `gtag`
+
+The GCM bridge tries three transports:
+
+1. `window.gtag(...)` — if defined.
+2. `window.dataLayer.push(...)` — if `dataLayer` is an array.
+3. Custom event on window — fallback.
+
+If neither gtag nor dataLayer is on the page when the consent change fires, only the custom event dispatches. Symptoms: GA's Network tab shows no `g/collect` with `gcs=G111`.
+
+Fix: initialize dataLayer + gtag stub **before** the engine. The standard GTM snippet does this:
+
+```html
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+</script>
+<!-- THEN the privion init -->
+<script type="module">
+  import { createPrivionConsent } from '@privion-consent/core';
+  // ...
+</script>
+```
+
+## Banner reappears after page reload
+
+Stored state isn't surviving. Check:
+
+- **`storage` is set correctly.** Default is cookie; the cookie must be allowed by the user's browser settings (third-party cookie blockers don't apply to same-origin cookies but some aggressive privacy extensions wipe them).
+- **The cookie's `domain` and `path` cover the URL where the engine is loaded.** A cookie set on `app.example.com` doesn't appear on `www.example.com` unless `domain: '.example.com'`.
+- **`config.version` matches what's stored.** A version bump invalidates stored state unless a migration is provided. Re-check your config; if you bumped `version` recently, you need [`migrations`](/guides/storage/#migrations).
+
+Diagnostic:
+
+```ts
+// Right after construction
+const state = consent.getState();
+console.log('hydrated state:', state);
+console.log('stored entry:', document.cookie.split(';').find(c => c.includes('privion-consent')));
+console.log('localStorage entry:', localStorage.getItem('privion-consent'));
+```
+
+## React: "useConsent must be used within a ConsentProvider"
+
+The hook is called outside the provider subtree. Common cases:
+
+- **Module-level call.** `useConsent` must be called inside a component's render, not at module init.
+- **Multiple React roots.** If your app has multiple `createRoot` calls, the provider in one root doesn't reach components in another. Wrap each root separately.
+- **Provider mounted later than the consumer.** Order matters in React: `<ConsentProvider>` must be a parent of the component calling `useConsent`. If you're using suspense / lazy loading, ensure the provider is outside the suspended subtree.
+
+## TypeScript: `Property 'userDecided' is missing in type 'ConsentState'`
+
+You're constructing a `ConsentState` literal without `userDecided`. As of 1.0 this field is required. Add it:
+
+```ts
+const state: ConsentState = {
+  categories: { /* ... */ },
+  updatedAt: '...',
+  version: 1,
+  source: 'api',
+  userDecided: false, // ← add this
+};
+```
+
+See [Migration guide — `userDecided` is now required](/reference/migration/#consentstateuserdecided-is-now-required).
+
+## TypeScript: `Argument of type 'X' is not assignable to parameter of type 'Y'` for `storage`
+
+The `storage` field accepts `StorageConfig | ConsentStorageAdapter`. If you're passing an object that's neither — typically because you typoed `type` or used a class without `implements ConsentStorageAdapter` — TS rejects it. Fix:
+
+```ts
+class MyAdapter implements ConsentStorageAdapter {
+  // implementation
+}
+```
+
+The interface is exported from `@privion-consent/core`.
+
+## Backend sync silently failing
+
+The library never throws on sync failures. If your `onSyncError` callback is missing, you have no signal at all. Add it:
+
+```ts
+backendSync: {
+  endpoint: '/api/consent',
+  onSyncError: (err) => console.error('[privion] sync error:', err),
+}
+```
+
+Once you see the error structure:
+
+- `err.cause === 'http' && err.status === 401`: auth issue. Check headers / credentials.
+- `err.cause === 'http' && err.status === 415`: server doesn't accept JSON. Server bug.
+- `err.cause === 'network'`: connection failed. CORS preflight? Wrong URL?
+
+## Astro: `<PrivionScript>` config not applying
+
+The component serializes `config` as JSON into the page. JSON can't carry functions, class instances, or anything non-data. If you have:
+
+```ts
+const config = {
+  // ...
+  backendSync: {
+    onSyncError: (err) => report(err), // ← gone after JSON serialization
+  },
+};
+```
+
+The serialized config has `onSyncError: undefined` and the callback never fires. See [Recipe: Astro non-serializable config](/recipes/astro-callbacks/) for the workaround.
+
+## Build fails: "The requested module 'astro/zod' does not provide an export named 'locales'"
+
+You're on Starlight 0.30+ with Astro 4. Starlight 0.30+ requires Astro 5. Either downgrade Starlight to 0.29.x or upgrade Astro to 5.x.
+
+(This is generic Starlight / Astro tooling territory, not Privion-specific — included here because we hit it during this project's own docs site bring-up.)
+
+## Still stuck?
+
+- Search [GitHub issues](https://github.com/Dreher-Media/privion-consent/issues).
+- File a new one with: the engine config (redact `endpoint` URLs / API keys), the failing snippet, and what you've already tried. Reproduction in a CodeSandbox is ⭐ if you can manage it.
+
+## See also
+
+- [FAQ](/guides/faq/) — questions about scope, comparison with other libraries
+- [API reference](/reference/api/) — exact type signatures

@@ -1,0 +1,161 @@
+---
+title: Migration guide
+description: Upgrade notes per major version, with before/after examples.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The canonical migration log lives in [MIGRATION.md](https://github.com/Dreher-Media/privion-consent/blob/main/MIGRATION.md) at the repo root. This page mirrors it for searchability and adds runnable before/after snippets.
+
+## How to read this guide
+
+Each version section lists the breakages in order of likelihood-you-need-to-act:
+
+1. **Will-definitely-break-your-build** — type / API signature changes.
+2. **Will-change-behavior** — same API but different runtime behavior.
+3. **Deprecations** — still works, but plan a switch.
+
+Run-the-codemod / sed-this-line suggestions are included where they make sense.
+
+## 0.x → 1.0
+
+The 0.x series predates the v1.0 hardening pass. If you're coming from any 0.x version, work through the items below.
+
+### `ConsentState.userDecided` is now required
+
+```ts
+// Before (0.x)
+const initialState: ConsentState = {
+  categories: { necessary: 'granted' },
+  updatedAt: '...',
+  version: 1,
+  source: 'api',
+  // no userDecided field
+};
+
+// After (1.0)
+const initialState: ConsentState = {
+  categories: { necessary: 'granted' },
+  updatedAt: '...',
+  version: 1,
+  source: 'api',
+  userDecided: false, // ← required
+};
+```
+
+**Where this hits you:** the React `<ConsentProvider initialState={...}>` SSR-hydration prop. Migrate any tests / mocks / SSR boot code that constructs `ConsentState` literally.
+
+### `setCategory` / `setMany` gained an optional source argument
+
+The API is **backward-compatible** — code without the new argument keeps working. But to flip `state.userDecided` correctly from a real UI flow, pass `'banner'` or `'preferences'`:
+
+```ts
+// Before — userDecided didn't exist; flow worked anyway because of state.source coupling.
+consent.setCategory('analytics', 'granted');
+
+// After — for a real user decision:
+consent.setCategory('analytics', 'granted', 'preferences');
+
+// For programmatic pre-seeding (server-side data, A/B testing):
+consent.setCategory('analytics', 'granted'); // implicit source 'api'
+```
+
+**Where this hits you:** any code that pretended `state.source === 'banner'` meant "user has decided". Switch the check to `state.userDecided`.
+
+### `config.i18n` moved to React provider
+
+```ts
+// Before — i18n was in the engine config:
+createPrivionConsent({
+  version: 1,
+  categories: [...],
+  i18n: { 'en': { acceptAll: 'Yes' } }, // engine-level
+});
+
+// After — i18n is a React-only concern, passed to <ConsentProvider>:
+import { ConsentProvider, deLocale } from '@privion-consent/react';
+
+<ConsentProvider config={config} i18n={deLocale}>
+```
+
+The engine no longer takes an `i18n` prop. Code that wasn't using the React bindings was already responsible for its own UI strings and isn't affected.
+
+### `ConsentStorage` deprecated; new pluggable interface
+
+`ConsentStorage` (the old monolithic class) is still exported as a thin wrapper for back-compat, but new code should use one of:
+
+```ts
+// Built-in selector
+createPrivionConsent({
+  storage: { type: 'localStorage' }, // unchanged
+});
+
+// Direct class
+import { LocalStorageAdapter } from '@privion-consent/core';
+createPrivionConsent({
+  storage: new LocalStorageAdapter({ key: 'my-key' }),
+});
+
+// Custom adapter
+import type { ConsentStorageAdapter } from '@privion-consent/core';
+class MyAdapter implements ConsentStorageAdapter { ... }
+createPrivionConsent({
+  storage: new MyAdapter(),
+});
+```
+
+### Google Consent Mode `mode` is honored
+
+Previously `googleConsentMode.mode` was accepted but ignored — both `basic` and `advanced` behaved the same. As of 1.0:
+
+- `basic`: no `default` emitted pre-consent.
+- `advanced`: `default` emitted on init.
+
+**Where this hits you:** if you declared `mode: 'basic'` expecting the old `advanced` behavior, switch to `mode: 'advanced'` explicitly. See [Google Consent Mode](/guides/google-consent-mode/).
+
+### Backend sync gained retries + error reporting
+
+`backendSync` now retries on transient failures (5xx, network) with exponential backoff. 4xx is no-retry. The new `onSyncError` callback receives a structured `BackendSyncError` for each failed attempt.
+
+```ts
+// Before — failures were console.warn'd and lost.
+backendSync: { endpoint: '/api/consent' };
+
+// After — same default behavior, plus:
+backendSync: {
+  endpoint: '/api/consent',
+  retries: 3,                              // default
+  retryBaseDelayMs: 200,                   // default
+  onSyncError: (err) => log.error(err),    // new
+};
+```
+
+The default `retries: 3` means existing configs *change behavior* — POSTs that used to fail once now try four times. If you need the old fire-and-forget single-attempt behavior, set `retries: 0`.
+
+### `initPrivionDom` returns a handle
+
+```ts
+// Before — return value was void.
+initPrivionDom(consent);
+
+// After — return value is a teardown handle. Existing callers ignoring the return still work.
+const dom = initPrivionDom(consent);
+// On SPA route teardown:
+dom.destroy();
+```
+
+**Where this hits you:** SPAs that mount/unmount the consent layer on route change. Without `destroy()`, the MutationObserver and engine listeners from the previous mount keep firing. CI tests are also affected (observers leaking between cases).
+
+## Stability promise
+
+From 1.0 onward, breakage follows [semver](https://semver.org/):
+
+- **Patch (1.0.x)** — bug fixes, perf, internal refactors. Safe to upgrade automatically.
+- **Minor (1.x.0)** — additive API only. Safe to upgrade with a test pass.
+- **Major (2.0.0+)** — breaking changes. Will ship with a `MIGRATION.md` entry equivalent to this section.
+
+Anything not listed in the [API reference](/reference/api/) is internal and may change in minor versions without notice. Don't import from `dist/` paths or rely on filenames.
+
+## Reporting upgrade pain
+
+If a migration is harder than it should be, [file an issue](https://github.com/Dreher-Media/privion-consent/issues/new) with the before / after code and what you actually did to make it work. Migration paint points become future codemod scripts.
