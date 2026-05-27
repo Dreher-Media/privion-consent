@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1](https://github.com/Dreher-Media/privion-consent/compare/consent-astro-v1.1.0...consent-astro-v1.1.1) (2026-05-27)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @privion-consent/dom bumped to 1.0.1
+
 ## [1.1.0](https://github.com/Dreher-Media/privion-consent/compare/consent-astro-v1.0.0...consent-astro-v1.1.0) (2026-05-11)
 
 
