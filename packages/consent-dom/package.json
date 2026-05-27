@@ -1,6 +1,6 @@
 {
   "name": "@privion-consent/dom",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DOM adapter for Privion Consent - handles scripts, iframes, and element visibility",
   "keywords": [
     "consent",

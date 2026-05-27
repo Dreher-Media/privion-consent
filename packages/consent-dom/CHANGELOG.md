@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/Dreher-Media/privion-consent/compare/consent-dom-v1.0.0...consent-dom-v1.0.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **dom:** stage preferences toggles until save instead of committing on change ([#23](https://github.com/Dreher-Media/privion-consent/issues/23)) ([1f53aef](https://github.com/Dreher-Media/privion-consent/commit/1f53aef6ccf9557bb4bc2653e479350a23f0b8e2))
+
 ## [1.0.0](https://github.com/Dreher-Media/privion-consent/compare/consent-dom-v0.1.0...consent-dom-v1.0.0) (2026-05-11)
 
 
