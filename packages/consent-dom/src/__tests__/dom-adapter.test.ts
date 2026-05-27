@@ -258,7 +258,37 @@ describe('DOM Adapter', () => {
       expect(state.categories.marketing).toBe('denied');
     });
 
-    it('should wire up category toggles', () => {
+    it('should initialize category toggles from engine state and stage changes (not commit) until save', () => {
+      const consent = createPrivionConsent(config);
+
+      container.innerHTML = `
+        <input type="checkbox" privion-toggle="analytics" />
+        <button privion-save-preferences>Save</button>
+      `;
+
+      initPrivionDom(consent, { root: container });
+
+      const checkbox = container.querySelector(
+        'input[privion-toggle="analytics"]',
+      ) as HTMLInputElement;
+      const saveBtn = container.querySelector(
+        'button[privion-save-preferences]',
+      ) as HTMLButtonElement;
+
+      // Should be unchecked initially (analytics defaults to denied)
+      expect(checkbox.checked).toBe(false);
+
+      // Toggling the checkbox must NOT commit to the engine — it's staging only
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change'));
+      expect(consent.getState().categories.analytics).toBe('denied');
+
+      // Save commits the staged state
+      saveBtn.click();
+      expect(consent.getState().categories.analytics).toBe('granted');
+    });
+
+    it('should reflect external consent changes back into toggle checkboxes', () => {
       const consent = createPrivionConsent(config);
 
       container.innerHTML = `
@@ -270,17 +300,41 @@ describe('DOM Adapter', () => {
       const checkbox = container.querySelector(
         'input[privion-toggle="analytics"]',
       ) as HTMLInputElement;
-
-      // Should be unchecked initially
       expect(checkbox.checked).toBe(false);
 
-      // Check the box
+      consent.setCategory('analytics', 'granted');
+      expect(checkbox.checked).toBe(true);
+
+      consent.setCategory('analytics', 'denied');
+      expect(checkbox.checked).toBe(false);
+    });
+
+    it('should discard staged toggle edits when the preferences modal is reopened', () => {
+      const consent = createPrivionConsent(config);
+
+      container.innerHTML = `
+        <div privion-preferences></div>
+        <button privion-open-preferences>Open</button>
+        <input type="checkbox" privion-toggle="analytics" />
+      `;
+
+      initPrivionDom(consent, { root: container });
+
+      const openBtn = container.querySelector(
+        'button[privion-open-preferences]',
+      ) as HTMLButtonElement;
+      const checkbox = container.querySelector(
+        'input[privion-toggle="analytics"]',
+      ) as HTMLInputElement;
+
+      // User stages a change but never saves
       checkbox.checked = true;
       checkbox.dispatchEvent(new Event('change'));
+      expect(consent.getState().categories.analytics).toBe('denied');
 
-      // Consent should be granted
-      const state = consent.getState();
-      expect(state.categories.analytics).toBe('granted');
+      // Reopening the modal resets staging to the committed engine state
+      openBtn.click();
+      expect(checkbox.checked).toBe(false);
     });
   });
 });

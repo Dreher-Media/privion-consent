@@ -98,6 +98,10 @@ export class UIHandler {
     const openPrefsBtns = root.querySelectorAll('[privion-open-preferences]');
     openPrefsBtns.forEach((btn) => {
       btn.addEventListener('click', () => {
+        // Reset staging checkboxes to the committed engine state so that
+        // closing the modal mid-edit and reopening discards the abandoned
+        // half-edit rather than preserving it.
+        this.syncToggles(root);
         this.showPreferences();
       });
     });
@@ -117,7 +121,13 @@ export class UIHandler {
   }
 
   /**
-   * Wire up category toggle checkboxes
+   * Wire up category toggle checkboxes.
+   *
+   * Toggles are *staging only*: changing a checkbox does NOT commit to the
+   * engine. The user's edit is committed when they click
+   * `[privion-save-preferences]` (or via Accept all / Reject all elsewhere).
+   * This lets the preferences modal act as a proper staging area where the
+   * user can change their mind or close the modal to discard.
    */
   private wireToggles(root: HTMLElement | Document): void {
     const toggles = root.querySelectorAll<HTMLInputElement>('[privion-toggle]');
@@ -128,22 +138,19 @@ export class UIHandler {
         continue;
       }
 
-      // Set initial state
+      // Set initial state from the engine.
       const state = this.consent.getState();
       const status = state.categories[categoryId] || 'unknown';
       toggle.checked = status === 'granted';
 
-      // Handle changes
-      toggle.addEventListener('change', () => {
-        const newStatus = toggle.checked ? 'granted' : 'denied';
-        this.consent.setCategory(categoryId, newStatus);
-      });
-
-      // Update on consent changes
-      this.consent.on('update', (state) => {
-        const currentStatus = state.categories[categoryId] || 'unknown';
-        toggle.checked = currentStatus === 'granted';
-      });
+      // Reflect external commits back into the checkbox (e.g. Accept all,
+      // Save preferences, or a programmatic setCategory from host code).
+      this.unsubscribes.push(
+        this.consent.on('update', (next) => {
+          const currentStatus = next.categories[categoryId] || 'unknown';
+          toggle.checked = currentStatus === 'granted';
+        }),
+      );
     }
 
     // Wire up required category displays
@@ -161,6 +168,24 @@ export class UIHandler {
         checkbox.disabled = true;
         checkbox.checked = true;
       }
+    }
+  }
+
+  /**
+   * Reset all `[privion-toggle]` checkboxes under `root` to the engine's
+   * current committed state. Called when the preferences modal is opened
+   * so any abandoned half-edit from a previous session is discarded.
+   */
+  private syncToggles(root: HTMLElement | Document): void {
+    const toggles = root.querySelectorAll<HTMLInputElement>('[privion-toggle]');
+    const state = this.consent.getState();
+    for (const toggle of Array.from(toggles)) {
+      const categoryId = toggle.getAttribute('privion-toggle');
+      if (!categoryId) {
+        continue;
+      }
+      const status = state.categories[categoryId] || 'unknown';
+      toggle.checked = status === 'granted';
     }
   }
 
