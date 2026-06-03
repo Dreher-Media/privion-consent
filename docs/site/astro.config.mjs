@@ -12,9 +12,13 @@ export default defineConfig({
       title: 'Privion Consent',
       description:
         'GDPR / ePrivacy / TTDSG consent management for vanilla JS, React, and Astro — headless, region-aware, with Google Consent Mode v2.',
-      social: {
-        github: 'https://github.com/Dreher-Media/privion-consent',
-      },
+      social: [
+        {
+          icon: 'github',
+          label: 'GitHub',
+          href: 'https://github.com/Dreher-Media/privion-consent',
+        },
+      ],
       editLink: {
         baseUrl: 'https://github.com/Dreher-Media/privion-consent/edit/main/docs/site/',
       },
