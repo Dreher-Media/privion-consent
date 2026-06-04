@@ -105,9 +105,9 @@ From the source ([`packages/consent-dom/src/index.ts`](https://github.com/Dreher
 2. Unsubscribes the script / iframe / visibility / UI handlers from engine events.
 3. Clears tracked element maps so already-registered scripts aren't double-processed if a new adapter is attached.
 
-It does **not** roll back already-activated scripts or restore `iframe.src` to `about:blank`. Activation is one-shot and irreversible by design — see [Attribute schema — Script gating](/reference/attribute-schema/#script-gating) for the rationale.
+It does **not** roll back already-activated scripts or restore `iframe.src` to `about:blank`. Activation is one-shot and irreversible by design — see [Attribute schema — Script gating](/reference/attribute-schema/#script-typeprivion) for the rationale.
 
 ## See also
 
-- [API — `PrivionDomHandle`](/reference/api/#initpriviondom)
+- [API — `PrivionDomHandle`](/reference/api/#initpriviondomconsent-options)
 - [Troubleshooting — banner appears twice](/guides/troubleshooting/#banner-appears-twice-after-route-change)
