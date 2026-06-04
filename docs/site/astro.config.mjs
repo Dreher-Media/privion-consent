@@ -1,12 +1,25 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import rehypeBaseUrls from './rehype-base-urls.mjs';
 
 // Deployed under GitHub Pages at the repo subpath. If you move to a
-// custom domain, drop `base` and set `site` accordingly.
+// custom domain, drop `base` (the rehype plugin below then becomes a no-op)
+// and set `site` accordingly.
+const base = '/privion-consent';
+
 export default defineConfig({
   site: 'https://dreher-media.github.io',
-  base: '/privion-consent',
+  base,
+  // Astro applies `base` to navigation chrome but not to links/images authored
+  // in markdown content, so root-absolute content links would 404 on the
+  // subpath. This appends to Starlight's existing rehype pipeline to prefix
+  // them. (`markdown.rehypePlugins` is deprecated in Astro 6 but still how
+  // Starlight itself injects plugins; switching to `markdown.processor` would
+  // replace Starlight's whole pipeline.)
+  markdown: {
+    rehypePlugins: [[rehypeBaseUrls, { base }]],
+  },
   integrations: [
     starlight({
       title: 'Privion Consent',
