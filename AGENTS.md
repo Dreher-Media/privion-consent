@@ -68,6 +68,18 @@ If a change touches multiple packages, release-please bumps each independently b
 
 Internal `workspace:*` dependencies are auto-bumped via the `node-workspace` plugin: when `core` releases a new version, `dom` and `react` get a release PR pinning the new version.
 
+#### Merge release PRs one at a time
+
+When a `fix:` or `feat:` lands and triggers both a release PR for the changed package **and** a workspace-dep release PR for a downstream package (e.g. `consent-dom` fix → `consent-astro` patch via `node-workspace`), merge them **sequentially, waiting for each tag to appear** before merging the next. Don't squash-merge all open release PRs in a single sitting.
+
+Why: if a workspace-dep release PR is merged before the upstream package is tagged, release-please re-evaluates on the next run, sometimes mis-identifies the workspace-dep merge commit as "not a release", walks back to the previous tag as the boundary, and produces a bogus follow-up release PR that re-attributes already-shipped feature commits to a new minor bump. That's how [`consent-astro@1.2.0`](packages/consent-astro/CHANGELOG.md) ended up superseding a phantom `1.1.1` with a misleading feature list ([#23](https://github.com/Dreher-Media/privion-consent/pull/23) → #24/#25/#26).
+
+The safe order, every time:
+
+1. Merge the upstream release PR (e.g. `chore(main): release consent-dom 1.0.1`).
+2. Wait for the tag (`consent-dom-v1.0.1`) and the `Publish` workflow to complete.
+3. Then merge the downstream workspace-dep release PR (e.g. `chore(main): release consent-astro 1.1.1`).
+
 ### What you don't need to do
 
 - No manual version bumping.
