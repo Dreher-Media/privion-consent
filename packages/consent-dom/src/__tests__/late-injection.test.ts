@@ -15,7 +15,17 @@ let container: HTMLDivElement;
 let activeHandles: Array<{ destroy: () => void }> = [];
 
 beforeEach(() => {
+  // Reset persisted consent between cases. The default storage type is
+  // `cookie`, so clearing localStorage alone is not enough — a test that
+  // grants consent would otherwise leak a granted cookie into the next
+  // case. (jsdom <24 didn't implement `document.cookie` read-back, which
+  // hid this; jsdom 29 does, so the cookie must be cleared explicitly.)
   localStorage.clear();
+  document.cookie.split(';').forEach((cookie) => {
+    const eqPos = cookie.indexOf('=');
+    const name = eqPos > -1 ? cookie.substring(0, eqPos).trim() : cookie.trim();
+    document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+  });
   container = document.createElement('div');
   document.body.appendChild(container);
 });
