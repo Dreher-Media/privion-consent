@@ -131,14 +131,15 @@
 
 [privion-preferences] > *:first-child,
 [data-privion-preferences] > *:first-child,
-[privion-preferences] > h2,
-[data-privion-preferences] > h2 {
+[privion-preferences] h2:first-child,
+[data-privion-preferences] h2:first-child {
   margin-top: 0;
 }
 
-/* The actual modal panel inside the backdrop. We can't enforce a
-   wrapper element so the children are styled directly: limit width
-   and apply the panel surface treatment. */
+/* The modal panel inside the backdrop. The Astro/React bindings (and
+   the vanilla example) wrap the heading, toggles and save button in a
+   single child element, so we style that one child as the card: limit
+   width and apply the panel surface treatment. */
 [privion-preferences] > *,
 [data-privion-preferences] > * {
   background: var(--privion-bg);
@@ -151,10 +152,10 @@
   width: 100%;
 }
 
-/* If the host structures the modal as a single panel wrapper, the
-   above selector treats every child as a panel which looks wrong.
-   Override: when there's exactly one child container, treat that
-   one as the panel and don't double-style its descendants. */
+/* Fallback for hand-written markup that emits the panel contents as
+   flat children instead of a single wrapper: keep the first child as
+   the card surface and strip the surface treatment from the rest so
+   they don't each render as a separate card. */
 [privion-preferences] > *:not(:only-child) ~ *,
 [data-privion-preferences] > *:not(:only-child) ~ * {
   box-shadow: none;
