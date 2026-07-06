@@ -67,22 +67,25 @@ const config = {
       <button privion-accept-all>Accept all</button>
     </div>
 
-    <!-- 3. Preferences modal -->
+    <!-- 3. Preferences modal. Wrap the contents in a single panel element so
+         the default stylesheet styles one element as the modal card. -->
     <div privion-preferences hidden>
-      <h2>Privacy preferences</h2>
-      <label>
-        <input type="checkbox" privion-required="necessary" disabled checked />
-        Necessary <span>required for the site to function</span>
-      </label>
-      <label>
-        <input type="checkbox" privion-toggle="analytics" />
-        Analytics
-      </label>
-      <label>
-        <input type="checkbox" privion-toggle="marketing" />
-        Marketing
-      </label>
-      <button privion-save-preferences>Save preferences</button>
+      <div privion-preferences-panel>
+        <h2>Privacy preferences</h2>
+        <label>
+          <input type="checkbox" privion-required="necessary" disabled checked />
+          Necessary <span>required for the site to function</span>
+        </label>
+        <label>
+          <input type="checkbox" privion-toggle="analytics" />
+          Analytics
+        </label>
+        <label>
+          <input type="checkbox" privion-toggle="marketing" />
+          Marketing
+        </label>
+        <button privion-save-preferences>Save preferences</button>
+      </div>
     </div>
 
     <!-- 4. Engine boot -->

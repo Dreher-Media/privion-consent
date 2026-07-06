@@ -110,15 +110,19 @@ The adapter watches `state.userDecided` and toggles the `hidden` attribute accor
 
 The preferences modal container. Hidden initially; un-hidden when a `[privion-open-preferences]` button is clicked.
 
+Wrap the modal contents (heading, toggles, save button) in a single panel element. The default stylesheet styles the first child of `[privion-preferences]` as the modal card, so emitting the contents as flat siblings renders each one as a separate card.
+
 ```html
 <div privion-preferences hidden>
-  <h2>Privacy preferences</h2>
-  <!-- toggles -->
-  <button privion-save-preferences>Save</button>
+  <div privion-preferences-panel>
+    <h2>Privacy preferences</h2>
+    <!-- toggles -->
+    <button privion-save-preferences>Save</button>
+  </div>
 </div>
 ```
 
-The adapter also re-hides the modal after `[privion-save-preferences]` fires.
+The adapter also re-hides the modal after `[privion-save-preferences]` fires. The panel wrapper carries no behavior — the adapter finds `[privion-save-preferences]`, `[privion-toggle]` and `[privion-required]` by descendant lookup, so any single wrapper element works.
 
 ### Action buttons
 
