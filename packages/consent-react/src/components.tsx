@@ -78,13 +78,20 @@ export function ConsentPreferences({ onClose }: ConsentPreferencesProps): JSX.El
 
   return (
     <div data-privion-preferences>
-      <h2>{i18n.preferencesTitle}</h2>
-      {config.categories.map((category: ConsentCategoryConfig) => (
-        <CategoryToggle key={category.id} category={category} />
-      ))}
-      <button onClick={handleSave} data-privion-save-preferences>
-        {i18n.save}
-      </button>
+      {/*
+        Contents sit in a single panel wrapper so the default
+        stylesheet can treat one element as the modal card; flat
+        children would each render as a separate card.
+      */}
+      <div data-privion-preferences-panel>
+        <h2>{i18n.preferencesTitle}</h2>
+        {config.categories.map((category: ConsentCategoryConfig) => (
+          <CategoryToggle key={category.id} category={category} />
+        ))}
+        <button onClick={handleSave} data-privion-save-preferences>
+          {i18n.save}
+        </button>
+      </div>
     </div>
   );
 }
