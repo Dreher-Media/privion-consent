@@ -33,13 +33,21 @@ const {
 ---
 
 <div privion-preferences hidden>
-  <h2>{title}</h2>
-  <slot>
-    {
-      categories?.map((category) => (
-        <CategoryToggle category={category} alwaysOnLabel={alwaysOnLabel} />
-      ))
-    }
-  </slot>
-  <button privion-save-preferences>{saveLabel}</button>
+  {/*
+    The contents live in a single panel wrapper so the default
+    stylesheet can treat one element as the modal card. Emitting the
+    heading, toggles and save button as flat children would make each
+    one a separate card. This mirrors the React binding's markup.
+  */}
+  <div privion-preferences-panel>
+    <h2>{title}</h2>
+    <slot>
+      {
+        categories?.map((category) => (
+          <CategoryToggle category={category} alwaysOnLabel={alwaysOnLabel} />
+        ))
+      }
+    </slot>
+    <button privion-save-preferences>{saveLabel}</button>
+  </div>
 </div>
