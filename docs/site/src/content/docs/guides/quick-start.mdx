@@ -228,11 +228,17 @@ Subscribe to engine events to react to consent updates in your own code:
 <TabItem label="Vanilla JS">
 
 ```ts
-consent.on('update', (state) => {
+const maybeInitAnalytics = (state) => {
   if (state.categories.analytics === 'granted') {
     initAnalytics();
   }
-});
+};
+
+// `ready` carries the initial state — including consent hydrated from a
+// prior session's storage — and is replayed even if you subscribe after
+// the engine initialized. `update` covers live changes in this session.
+consent.on('ready', maybeInitAnalytics);
+consent.on('update', maybeInitAnalytics);
 ```
 
 </TabItem>
@@ -255,15 +261,17 @@ function AnalyticsLoader() {
 
 ```astro
 <script>
-  function whenReady(cb) {
+  function withConsent(cb) {
     if (window.__privionConsent) return cb(window.__privionConsent);
-    queueMicrotask(() => whenReady(cb));
+    window.addEventListener('privion:ready', (e) => cb(e.detail.consent), { once: true });
   }
 
-  whenReady((consent) => {
-    consent.on('update', (state) => {
+  withConsent((consent) => {
+    const maybeInitAnalytics = (state) => {
       if (state.categories.analytics === 'granted') initAnalytics();
-    });
+    };
+    consent.on('ready', maybeInitAnalytics); // replayed — covers stored consent
+    consent.on('update', maybeInitAnalytics); // live changes
   });
 </script>
 ```

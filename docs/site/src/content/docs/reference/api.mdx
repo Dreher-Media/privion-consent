@@ -75,6 +75,8 @@ Clears storage, re-initializes from defaults, emits `reset`. Does **not** emit `
 
 `on` returns an unsubscribe function. `off` exists for symmetry but the returned-callback pattern is preferred. Handlers run synchronously in registration order; errors are caught and `console.error`'d.
 
+Subscribing to `ready` after the engine initialized **replays** the event: the handler is invoked immediately (synchronously, before `on` returns) with the current state — including state hydrated from storage for a returning visitor. See [Event lifecycle](/guides/events/#ready-replays-to-late-subscribers).
+
 ### `resolveRegionMode(config)`
 
 ```ts

@@ -117,16 +117,19 @@ For anything that *can* live in the JSON block, putting it there has one benefit
 
 ## Subscribing from elsewhere
 
-`window.__privionConsent` is set after `initPrivionDom`. From any other client script (an Astro page-level `<script>`, a third-party widget, etc.):
+`window.__privionConsent` is set after `initPrivionDom`. From any other client script (an Astro page-level `<script>`, a third-party widget, etc.), check the global and fall back to the `privion:ready` CustomEvent that `bootPrivion` / `<PrivionScript>` dispatches on `window` once the engine is live:
 
 ```astro
 <script>
-  function whenReady(cb) {
+  function withConsent(cb) {
     if (window.__privionConsent) return cb(window.__privionConsent);
-    queueMicrotask(() => whenReady(cb));
+    window.addEventListener('privion:ready', (e) => cb(e.detail.consent), { once: true });
   }
 
-  whenReady((consent) => {
+  withConsent((consent) => {
+    consent.on('ready', (state) => {
+      console.log('initial state (incl. stored consent)', state);
+    });
     consent.on('update', (state) => {
       console.log('consent changed', state);
     });
@@ -134,7 +137,12 @@ For anything that *can* live in the JSON block, putting it there has one benefit
 </script>
 ```
 
-The `whenReady` polyfill exists because Astro bundles `<script>` tags as separate modules — they may resolve in arbitrary order, and the consent layer's bundle might not have run yet when another bundle tries to subscribe.
+The fallback exists because Astro bundles `<script>` tags as separate modules — they may resolve in arbitrary order, and the consent layer's bundle might not have run yet when another bundle tries to subscribe. If you bypass `bootPrivion` and construct the engine yourself (as in the callback example above), dispatch the event after attaching the global so other scripts keep working:
+
+```ts
+window.__privionConsent = consent;
+window.dispatchEvent(new CustomEvent('privion:ready', { detail: { consent } }));
+```
 
 ## When NOT to bypass `<PrivionScript>`
 

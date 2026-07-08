@@ -11,7 +11,7 @@ The engine emits five events. Subscribe with `consent.on(event, handler)`; the c
 
 | Event         | Fires when                                                   | Followed by                  |
 | ------------- | ------------------------------------------------------------ | ---------------------------- |
-| `ready`       | Constructor completes (synchronously, before `new` returns). | —                            |
+| `ready`       | Initial state load completes (defaults **or** hydrated from storage). Replayed to handlers that subscribe later — see below. | —                            |
 | `update`      | Any `setCategory` / `setMany` that actually changes state.   | `accept_all` / `reject_all` if triggered from there |
 | `accept_all`  | `consent.acceptAll()` runs.                                  | —                            |
 | `reject_all`  | `consent.rejectAll()` runs.                                  | —                            |
@@ -89,15 +89,18 @@ function ConsentLogger() {
 </TabItem>
 <TabItem label="Astro">
 
-The engine instance is attached to `window.__privionConsent` by `<PrivionScript>`. From any other client script:
+The engine instance is attached to `window.__privionConsent` by `<PrivionScript>`, which then announces it with a `privion:ready` CustomEvent on `window`. Because Astro bundles `<script>` tags as separate modules with no ordering guarantee, check the global first and fall back to the event — no polling needed:
 
 ```astro
 <script>
-  function whenReady(cb) {
+  function withConsent(cb) {
     if (window.__privionConsent) return cb(window.__privionConsent);
-    queueMicrotask(() => whenReady(cb));
+    window.addEventListener('privion:ready', (e) => cb(e.detail.consent), { once: true });
   }
-  whenReady((consent) => {
+  withConsent((consent) => {
+    consent.on('ready', (state) => {
+      console.log('initial state (incl. stored consent)', state);
+    });
     consent.on('update', (state) => {
       console.log('state changed', state);
     });
@@ -108,29 +111,28 @@ The engine instance is attached to `window.__privionConsent` by `<PrivionScript>
 </TabItem>
 </Tabs>
 
-## The `ready` edge case
+## `ready` replays to late subscribers
 
-`ready` fires **synchronously inside the constructor**, *before* `new PrivionConsent(...)` returns. That means you can't `consent.on('ready', ...)` and expect to receive it for the current construction — the handler isn't registered yet.
+`ready` first fires **synchronously inside the constructor**, *before* `new PrivionConsent(...)` returns — so no consumer can be subscribed at that moment. To make the initial load observable anyway, the engine **replays** `ready` to every handler that subscribes after initialization: the handler is invoked immediately (synchronously, before `on` returns) with the current state, exactly once.
 
-Two patterns handle this:
-
-```ts
-// Pattern 1: Just use the post-construction state directly.
-const consent = createPrivionConsent(config);
-const initialState = consent.getState(); // same as what 'ready' would have emitted
-```
+This matters most for **returning visitors**. Consent restored from storage is not a state *change*, so it never fires `update` — `ready` is the only event that carries a hydrated prior decision. A subscriber that grabs the engine from `window.__privionConsent` long after boot still learns the stored consent without polling `getState()`:
 
 ```ts
-// Pattern 2: If a later subscriber needs to behave as if ready had just fired
-// (e.g. wiring up a handler chain), the DOM adapter's pattern is to call the
-// handler immediately AND register it for future updates.
-function onReady(state: ConsentState) { /* ... */ }
-const consent = createPrivionConsent(config);
-onReady(consent.getState());
-consent.on('update', onReady); // for subsequent changes
+consent.on('ready', (state) => {
+  // Runs immediately if the engine already initialized — including when
+  // `state` was hydrated from a prior session's stored consent.
+  if (state.categories.analytics === 'granted') initAnalytics();
+});
+consent.on('update', (state) => {
+  // Live changes from this session's banner/preferences.
+});
 ```
 
-The DOM adapter does this internally — see `script-handler.ts` / `iframe-handler.ts` if you're curious.
+If you only need the snapshot and no callback wiring, `consent.getState()` after construction returns the same state `ready` emits.
+
+<Aside title="Before core 1.1">
+  Older engines did not replay `ready`; a handler subscribed after construction never fired, and hydrated consent was only reachable by polling `getState()`. If you carry a bounded-poll workaround from that era, you can delete it once you're on a replaying core.
+</Aside>
 
 ## Error handling
 

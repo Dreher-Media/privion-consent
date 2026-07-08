@@ -141,7 +141,7 @@ The expression is comma- or space-separated tokens. A bare token requires that c
                             └── reset       (does NOT fire update)
 ```
 
-- `ready` fires once per engine instance, synchronously inside the constructor.
+- `ready` fires once per engine instance, synchronously inside the constructor, carrying the initial state (defaults or hydrated from storage). Because no consumer can be subscribed at that point, the engine **replays** `ready` to every handler that subscribes after initialization — invoked synchronously inside `on()`, exactly once. This is the only event that carries a returning visitor's stored consent; hydration is not a state change and does not fire `update`.
 - `update` fires on every `setCategory` / `setMany` that actually changed state, plus inside `acceptAll` / `rejectAll`.
 - `accept_all` and `reject_all` fire **after** `update`, with the same final state. Listeners that need both kinds of signal can subscribe to `update` and key off `state.source` (`'banner'`).
 - `reset` clears storage and re-initializes. It fires `reset`; it does not fire `update`.
