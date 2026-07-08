@@ -10,6 +10,10 @@ declare global {
     /** Live engine instance, attached after `bootPrivion` completes. */
     __privionConsent?: PrivionConsent;
   }
+  interface WindowEventMap {
+    /** Fired by `bootPrivion` once the engine is live on `window.__privionConsent`. */
+    'privion:ready': CustomEvent<{ consent: PrivionConsent }>;
+  }
 }
 
 /**
@@ -21,12 +25,23 @@ declare global {
  *
  * The instance is attached to `window.__privionConsent` so other
  * client code (analytics scripts, custom UI) can subscribe to events
- * without re-importing the engine.
+ * without re-importing the engine. Because Astro bundles `<script>`
+ * tags as separate modules with no ordering guarantee, a page script
+ * may run before this boot does — so after attaching the global, a
+ * `privion:ready` CustomEvent (detail: `{ consent }`) is dispatched on
+ * `window`. Combined with the engine replaying the `ready` event to
+ * late subscribers, consumers never need to poll:
+ *
+ *   function withConsent(cb) {
+ *     if (window.__privionConsent) return cb(window.__privionConsent);
+ *     window.addEventListener('privion:ready', (e) => cb(e.detail.consent), { once: true });
+ *   }
  */
 export function bootPrivion(config: PrivionConsentConfig): PrivionConsent {
   const consent = createPrivionConsent(config);
   initPrivionDom(consent);
   window.__privionConsent = consent;
+  window.dispatchEvent(new CustomEvent('privion:ready', { detail: { consent } }));
   return consent;
 }
 
