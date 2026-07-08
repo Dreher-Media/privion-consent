@@ -330,15 +330,84 @@ describe('PrivionConsent', () => {
   });
 
   describe('Events', () => {
-    it('should emit ready event on initialization', () => {
+    it('replays ready to handlers subscribed after construction', () => {
+      const consent = createPrivionConsent(config);
       const handler = vi.fn();
+
+      // `ready` fires inside the constructor, before any consumer can
+      // subscribe. Late subscribers must still receive it (replay),
+      // synchronously, exactly once.
+      consent.on('ready', handler);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categories: expect.objectContaining({ necessary: 'granted' }),
+          userDecided: false,
+        }),
+      );
+    });
+
+    it('replays ready with the state hydrated from storage', () => {
+      // A returning visitor: a prior session's decision is on file.
+      localStorage.setItem(
+        'privion-consent',
+        JSON.stringify({
+          categories: { necessary: 'granted', analytics: 'granted', marketing: 'denied' },
+          updatedAt: new Date().toISOString(),
+          version: 1,
+          source: 'banner',
+          userDecided: true,
+        }),
+      );
+
+      const consent = createPrivionConsent({ ...config, storage: { type: 'localStorage' } });
+      const handler = vi.fn();
+      consent.on('ready', handler);
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categories: expect.objectContaining({ analytics: 'granted', marketing: 'denied' }),
+          userDecided: true,
+        }),
+      );
+    });
+
+    it('does not re-fire ready on later state changes', () => {
+      const consent = createPrivionConsent(config);
+      const handler = vi.fn();
+      consent.on('ready', handler);
+
+      consent.setCategory('analytics', 'granted');
+      consent.acceptAll();
+
+      expect(handler).toHaveBeenCalledTimes(1); // replay only
+    });
+
+    it('does not replay other events to late subscribers', () => {
+      const consent = createPrivionConsent(config);
+      const handler = vi.fn();
+
+      consent.on('update', handler);
+      consent.on('accept_all', handler);
+      consent.on('reject_all', handler);
+      consent.on('reset', handler);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('contains errors thrown by a replayed ready handler', () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
       const consent = createPrivionConsent(config);
 
-      // ready is emitted synchronously, so we need to subscribe before creation
-      // Actually, we can't test this easily since it's emitted in constructor
-      // But we can test that the state is correct
-      const state = consent.getState();
-      expect(state).toBeDefined();
+      expect(() => {
+        consent.on('ready', () => {
+          throw new Error('listener boom');
+        });
+      }).not.toThrow();
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
     });
 
     it('should allow unsubscribing from events', () => {
