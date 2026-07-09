@@ -184,6 +184,12 @@ export interface ConsentState {
 }
 
 /**
- * Consent event types
+ * Consent event types.
+ *
+ * `ready` marks the initial state load (defaults or hydrated from
+ * storage). It is emitted once inside the constructor and **replayed**
+ * to any handler that subscribes after initialization, so late
+ * subscribers (e.g. via `window.__privionConsent`) still observe the
+ * hydrated state without polling.
  */
 export type ConsentEvent = 'ready' | 'update' | 'accept_all' | 'reject_all' | 'reset';

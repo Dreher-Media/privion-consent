@@ -263,13 +263,27 @@ export class PrivionConsent {
   }
 
   /**
-   * Subscribe to consent events
+   * Subscribe to consent events.
+   *
+   * `ready` replays: if the engine has already finished its initial
+   * state load — including state hydrated from storage for a returning
+   * visitor — the handler is invoked immediately (synchronously, before
+   * `on` returns) with the current state. `ready` fires inside the
+   * constructor, before any consumer could possibly have subscribed;
+   * without the replay it is unobservable and consumers are forced to
+   * poll `getState()` to learn when hydrated consent becomes readable.
+   *
+   * All other events fire only on subsequent changes.
    */
   on(event: ConsentEvent, handler: EventHandler): () => void {
     if (!this.eventHandlers.has(event)) {
       this.eventHandlers.set(event, new Set());
     }
     this.eventHandlers.get(event)!.add(handler);
+
+    if (event === 'ready' && this.isReady) {
+      this.invokeHandler(event, handler, this.getState());
+    }
 
     // Return unsubscribe function
     return () => {
@@ -294,12 +308,21 @@ export class PrivionConsent {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
       handlers.forEach((handler) => {
-        try {
-          handler(state);
-        } catch (error) {
-          console.error(`Error in consent event handler for "${event}":`, error);
-        }
+        this.invokeHandler(event, handler, state);
       });
+    }
+  }
+
+  /**
+   * Invoke a single handler with the engine's error containment: an
+   * exception thrown by one listener is logged and must not break the
+   * caller or other listeners.
+   */
+  private invokeHandler(event: ConsentEvent, handler: EventHandler, state: ConsentState): void {
+    try {
+      handler(state);
+    } catch (error) {
+      console.error(`Error in consent event handler for "${event}":`, error);
     }
   }
 

@@ -34,6 +34,40 @@ describe('bootPrivion', () => {
     expect(consent.getState().categories.necessary).toBe('granted');
   });
 
+  it('dispatches privion:ready on window once the engine is live', () => {
+    let seenGlobal: unknown = null;
+    let seenConsent: unknown = null;
+    const handler = vi.fn((event: CustomEvent<{ consent: unknown }>) => {
+      // The global must already be attached when the event fires so
+      // listeners can use either discovery mechanism interchangeably.
+      seenGlobal = window.__privionConsent;
+      seenConsent = event.detail.consent;
+    });
+    window.addEventListener('privion:ready', handler, { once: true });
+
+    const consent = bootPrivion(config);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(seenConsent).toBe(consent);
+    expect(seenGlobal).toBe(consent);
+  });
+
+  it('replays ready to subscribers that arrive after boot', () => {
+    const consent = bootPrivion(config);
+    const handler = vi.fn();
+
+    // Simulates a separate page script that grabbed the engine from
+    // window.__privionConsent well after initialization.
+    consent.on('ready', handler);
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        categories: expect.objectContaining({ necessary: 'granted' }),
+      }),
+    );
+  });
+
   it('drives the SSR-rendered banner by toggling its hidden attribute', () => {
     document.body.innerHTML = `<div privion-banner hidden></div>`;
     const banner = document.querySelector<HTMLElement>('[privion-banner]')!;
