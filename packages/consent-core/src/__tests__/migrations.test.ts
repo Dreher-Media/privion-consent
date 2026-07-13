@@ -28,18 +28,16 @@ describe('config.migrations', () => {
   it('runs a single 1 → 2 migration', () => {
     seed({ version: 1, categories: { necessary: 'granted', analytics: 'granted' } });
 
-    const migrate = vi.fn(
-      (old: ConsentState): ConsentState => ({
-        ...old,
-        version: 2,
-        categories: {
-          necessary: old.categories.necessary ?? 'granted',
-          // analytics renamed to stats
-          stats: old.categories.analytics ?? 'denied',
-          ads: 'denied',
-        },
-      }),
-    );
+    const migrate = vi.fn((old: ConsentState): ConsentState => ({
+      ...old,
+      version: 2,
+      categories: {
+        necessary: old.categories.necessary ?? 'granted',
+        // analytics renamed to stats
+        stats: old.categories.analytics ?? 'denied',
+        ads: 'denied',
+      },
+    }));
 
     const consent = createPrivionConsent({
       version: 2,
