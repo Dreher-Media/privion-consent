@@ -33,11 +33,18 @@ updates:
           - minor
           - patch
     ignore:
-      # Astro 5 has been released but isn't a peer-dep we can bump
-      # without testing every consumer pattern. Manual bump.
+      # Astro majors change consent-astro's peer surface — every consumer
+      # pattern needs testing first. Manual bump.
       - dependency-name: astro
         update-types:
           - version-update:semver-major
+      # Starlight ≥0.40 requires astro ^7 (peer) — a 0.x "minor" that is
+      # effectively an astro-major in disguise; grouping it with astro 6.x
+      # produced an unbuildable PR (#39). Unblock when the astro 7
+      # migration lands.
+      - dependency-name: '@astrojs/starlight'
+        versions:
+          - '>=0.40.0'
 
   - package-ecosystem: github-actions
     directory: '/'
