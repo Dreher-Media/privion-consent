@@ -1,7 +1,7 @@
 name: Astro compatibility matrix
 
 # Verifies the @privion-consent/astro peer-dep claim by building +
-# testing the package against both major Astro lines we declare
+# testing the package against every major Astro line we declare
 # support for. Runs on pull requests that touch the consent-astro
 # package or this workflow, and on every push to main as a sanity
 # net for the release-please publishes.
@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        astro: ['4', '5', '6']
+        astro: ['4', '5', '6', '7']
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
