@@ -55,7 +55,13 @@ Wait for CI green before requesting merge.
 
 Fully automated via [release-please](https://github.com/googleapis/release-please) in **manifest mode** (one release PR per package). You don't run `npm version`, push tags, or edit `CHANGELOG.md`.
 
-When a PR with a `feat:` or `fix:` title lands on `main`, release-please opens or updates a per-package release PR titled `chore(<package>): release X.Y.Z`. Squash-merging that PR creates a tag (e.g. `consent-core-v0.2.0`), which triggers `npm publish` for that package.
+When a PR with a `feat:` or `fix:` title lands on `main`, release-please opens or updates a per-package release PR titled `chore(<package>): release X.Y.Z`. Squash-merging that PR creates a tag (e.g. `consent-core-v0.2.0`) and GitHub release; `release-please.yml` then dispatches `publish.yml` for that tag.
+
+How publishing works:
+
+- release-please runs with `GITHUB_TOKEN`, not a personal token. Events caused by `GITHUB_TOKEN` don't start other workflows, so `release-please.yml` explicitly dispatches `ci.yml` on each release PR (so the required `verify` and `lint-pr-title` checks report) and `publish.yml` once per released package.
+- `publish.yml` only runs on `workflow_dispatch` from `main`. A pushed tag on its own publishes nothing. It checks that the tag names one of the four packages, that the tag's commit is on `main` and that the package's version matches, builds and packs (`pnpm pack`, which rewrites `workspace:*`) in a job without npm credentials, then publishes the tarball with `npm publish --provenance` in a separate job that runs in the `npm-publish` environment (reviewer approval) with npm trusted publishing (OIDC).
+- To publish an existing tag by hand: Actions → Publish → Run workflow, branch `main`, tag `consent-<package>-vX.Y.Z`.
 
 Bump rules:
 
@@ -77,7 +83,7 @@ Why: if a workspace-dep release PR is merged before the upstream package is tagg
 The safe order, every time:
 
 1. Merge the upstream release PR (e.g. `chore(main): release consent-dom 1.0.1`).
-2. Wait for the tag (`consent-dom-v1.0.1`) and the `Publish` workflow to complete.
+2. Wait for the tag (`consent-dom-v1.0.1`) and the `Publish` workflow to complete (it waits for approval in the `npm-publish` environment).
 3. Then merge the downstream workspace-dep release PR (e.g. `chore(main): release consent-astro 1.1.1`).
 
 ### What you don't need to do
@@ -94,7 +100,7 @@ The safe order, every time:
 
 - **Manifest:** [`.dm-standards.json`](./.dm-standards.json) — declares overlays (`typescript-node`, `public-package`) and visibility (`public`).
 - **Required CI check on `main`:** `verify`.
-- **Required secrets:** `NPM_TOKEN`, `RELEASE_PLEASE_TOKEN`.
+- **Required secrets:** none. npm publishing uses trusted publishing (OIDC) from `publish.yml` in the `npm-publish` environment; release-please uses `GITHUB_TOKEN`.
 
 This is a monorepo, which is currently a deviation from the standard `typescript-node` overlay (designed for single-package repos). Per-package CI/release/publish wiring is documented in this file rather than inherited until a `monorepo` overlay exists in the standards repo.
 

@@ -5,33 +5,53 @@ on:
     branches: [main]
   push:
     branches: [main]
+  # release-please.yml dispatches this on each release PR's branch: release
+  # PRs are opened with GITHUB_TOKEN, and events caused by that token do not
+  # start pull_request runs, so without this the required checks would never
+  # report on them.
+  workflow_dispatch:
+    inputs:
+      pr-title:
+        description: Title of the PR being checked (linted like a PR title)
+        required: true
+        type: string
+
+permissions: {}
 
 jobs:
   lint-pr-title:
     # Lint the PR title against Conventional Commits. Because PRs are squash-merged,
     # the PR title becomes the commit on the integration branch and is what
     # release-please reads. Malformed titles break the release pipeline.
-    if: github.event_name == 'pull_request'
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: lts/*
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Lint PR title
         env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_TITLE: ${{ github.event.pull_request.title || inputs.pr-title }}
         run: echo "$PR_TITLE" | pnpm exec commitlint
 
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: lts/*
           cache: pnpm
