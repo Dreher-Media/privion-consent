@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.1](https://github.com/Dreher-Media/privion-consent/compare/consent-react-v1.0.0...consent-react-v1.0.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* render the consent preferences modal as a single card ([#43](https://github.com/Dreher-Media/privion-consent/issues/43)) ([c075040](https://github.com/Dreher-Media/privion-consent/commit/c07504031fe9e4a5355b4134d4240cf2a4032d86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @privion-consent/core bumped to 1.1.0
+
 ## [1.0.0](https://github.com/Dreher-Media/privion-consent/compare/consent-react-v0.1.0...consent-react-v1.0.0) (2026-05-11)
 
 
