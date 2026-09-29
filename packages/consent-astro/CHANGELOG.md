@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.3.0](https://github.com/Dreher-Media/privion-consent/compare/consent-astro-v1.2.0...consent-astro-v1.3.0) (2026-09-29)
+
+
+### Features
+
+* accept Astro 6 and 7 in the @privion-consent/astro peer range ([#56](https://github.com/Dreher-Media/privion-consent/issues/56)) ([544710a](https://github.com/Dreher-Media/privion-consent/commit/544710ae28d31c509d963965772d51c7be477333))
+* make stored-consent hydration observable without polling ([#44](https://github.com/Dreher-Media/privion-consent/issues/44)) ([605ea06](https://github.com/Dreher-Media/privion-consent/commit/605ea06716ccf6c62a017a0b2fc9bfa4c3325491))
+
+
+### Bug Fixes
+
+* render the consent preferences modal as a single card ([#43](https://github.com/Dreher-Media/privion-consent/issues/43)) ([c075040](https://github.com/Dreher-Media/privion-consent/commit/c07504031fe9e4a5355b4134d4240cf2a4032d86))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @privion-consent/core bumped to 1.1.0
+    * @privion-consent/dom bumped to 1.0.2
+
 ## [1.2.0](https://github.com/Dreher-Media/privion-consent/compare/consent-astro-v1.1.0...consent-astro-v1.2.0) (2026-05-27)
 
 > [!NOTE]
