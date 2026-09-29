@@ -4,20 +4,63 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
+
+defaults:
+  run:
+    # bash -eo pipefail: a failing jq in a pipeline fails the step.
+    shell: bash
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      result: ${{ toJSON(steps.release.outputs) }}
     steps:
-      - uses: googleapis/release-please-action@v5
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           target-branch: main
-          # Use a PAT (or GitHub App token) so release PRs are opened by a
-          # user account, not GITHUB_TOKEN. PRs opened with GITHUB_TOKEN do
-          # not trigger pull_request workflows, which means CI never runs on
-          # the release PR. Falls back to GITHUB_TOKEN if the secret is unset
-          # (release PR will still open, just won't trigger CI).
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          # GITHUB_TOKEN on purpose, not a personal access token: this is a
+          # public repo and the token is handed to a third-party action.
+          # Events caused by GITHUB_TOKEN do not start other workflows, so the
+          # `dispatch` job below starts CI on the release PRs and the publish
+          # run explicitly (workflow_dispatch is the documented exception).
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  dispatch:
+    needs: release-please
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RESULT: ${{ needs.release-please.outputs.result }}
+    steps:
+      - name: Run CI on the release PRs
+        run: |
+          jq -c '(.prs // "[]") | fromjson | .[]' <<<"$RESULT" | while IFS= read -r pr; do
+            branch=$(jq -r '.headBranchName' <<<"$pr")
+            title=$(jq -r '.title' <<<"$pr")
+            echo "Dispatching CI on $branch"
+            gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$branch" -f pr-title="$title" </dev/null
+          done
+
+      - name: Publish the new releases
+        # One publish run per released package. publish.yml re-checks
+        # everything (tag on main, version match) and waits for approval in
+        # the npm-publish environment.
+        run: |
+          jq -r '(.paths_released // "[]") | fromjson | .[]' <<<"$RESULT" | while IFS= read -r path; do
+            if [ "$path" = "." ]; then key=tag_name; else key="${path}--tag_name"; fi
+            tag=$(jq -r --arg k "$key" '.[$k] // empty' <<<"$RESULT")
+            if [ -z "$tag" ]; then
+              echo "::error::release-please reported a release for '$path' but no tag"
+              exit 1
+            fi
+            echo "Dispatching publish for $tag"
+            gh workflow run publish.yml --repo "$GITHUB_REPOSITORY" --ref main -f tag="$tag" </dev/null
+          done
