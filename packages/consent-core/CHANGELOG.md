@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/Dreher-Media/privion-consent/compare/consent-core-v1.0.0...consent-core-v1.1.0) (2026-09-29)
+
+
+### Features
+
+* make stored-consent hydration observable without polling ([#44](https://github.com/Dreher-Media/privion-consent/issues/44)) ([605ea06](https://github.com/Dreher-Media/privion-consent/commit/605ea06716ccf6c62a017a0b2fc9bfa4c3325491))
+
 ## [1.0.0](https://github.com/Dreher-Media/privion-consent/compare/consent-core-v0.1.0...consent-core-v1.0.0) (2026-05-11)
 
 
