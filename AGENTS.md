@@ -22,7 +22,7 @@ Tooling: pnpm workspaces, Turbo, Vite + Vitest, release-please for monorepo rele
 pnpm install
 ```
 
-Requires Node `>=18` and pnpm `10.x` (pinned via `packageManager` in `package.json`).
+Requires Node `>=22.12` and pnpm `10.x` (pinned via `packageManager` in `package.json`).
 
 ### Develop
 
