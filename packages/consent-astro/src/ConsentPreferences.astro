@@ -2,7 +2,9 @@
 /**
  * Headless preferences modal, server-rendered with the
  * `privion-preferences` attribute. Hidden by default; the DOM adapter
- * un-hides it when a `[privion-open-preferences]` button is clicked.
+ * un-hides it when a `[privion-open-preferences]` button is clicked,
+ * and hides it again on Save, on the close button
+ * (`[privion-close-preferences]`), on Escape and on a backdrop click.
  *
  * Slot the toggles inline if you want full control, or pass
  * `categories` to render a default toggle per category. The save
@@ -14,19 +16,25 @@ import CategoryToggle from './CategoryToggle.astro';
 
 export interface Props {
   title?: string;
+  /** Optional short paragraph under the title. */
+  description?: string;
   saveLabel?: string;
+  /** Accessible name of the icon-only close button. */
+  closeLabel?: string;
   /**
    * If provided, renders a `<CategoryToggle>` per entry. Omit to
    * supply your own toggles via the default slot.
    */
   categories?: ConsentCategoryConfig[];
-  /** Label appended to required categories (e.g. "(always on)"). */
+  /** Badge shown next to required categories (e.g. "always on"). */
   alwaysOnLabel?: string;
 }
 
 const {
   title = 'Privacy preferences',
+  description,
   saveLabel = 'Save preferences',
+  closeLabel = 'Close',
   categories,
   alwaysOnLabel = 'always on',
 } = Astro.props;
@@ -39,15 +47,36 @@ const {
     heading, toggles and save button as flat children would make each
     one a separate card. This mirrors the React binding's markup.
   */}
-  <div privion-preferences-panel>
-    <h2>{title}</h2>
-    <slot>
-      {
-        categories?.map((category) => (
-          <CategoryToggle category={category} alwaysOnLabel={alwaysOnLabel} />
-        ))
-      }
-    </slot>
-    <button privion-save-preferences>{saveLabel}</button>
+  <div
+    privion-preferences-panel
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="privion-preferences-title"
+  >
+    <div privion-preferences-header>
+      <h2 id="privion-preferences-title">{title}</h2>
+      <button type="button" privion-close-preferences aria-label={closeLabel}>
+        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path
+            d="M5 5l10 10M15 5L5 15"
+            stroke="currentColor"
+            stroke-width="1.75"
+            stroke-linecap="round"></path>
+        </svg>
+      </button>
+    </div>
+    {description && <p privion-preferences-intro>{description}</p>}
+    <div privion-preferences-categories>
+      <slot>
+        {
+          categories?.map((category) => (
+            <CategoryToggle category={category} alwaysOnLabel={alwaysOnLabel} />
+          ))
+        }
+      </slot>
+    </div>
+    <div privion-preferences-footer>
+      <button type="button" privion-save-preferences>{saveLabel}</button>
+    </div>
   </div>
 </div>

@@ -6,35 +6,54 @@
  * has a chance to check `state.userDecided`. The DOM adapter unhides
  * it on `ready` if the user hasn't decided yet.
  *
- * Slot the body / buttons however you want — the only requirement is
- * that the action buttons carry the matching `privion-*` attributes
- * (provided as defaults below) so the DOM adapter wires them.
+ * Two ways to customize:
+ * - the named `body` slot replaces only the copy (e.g. to add a link
+ *   to the privacy policy) and keeps the default buttons;
+ * - the default slot replaces everything. The action buttons must then
+ *   carry the matching `privion-*` attributes so the DOM adapter wires
+ *   them.
+ *
+ * The `privion-banner-body` / `privion-banner-actions` wrappers are
+ * layout hooks for the default stylesheet; they carry no behavior.
  */
 
 export interface Props {
+  /** Optional heading above the body text. */
+  title?: string;
   /**
-   * Body text shown above the buttons. Override via the default slot
+   * Body text shown above the buttons. Override via the `body` slot
    * for richer markup (links, multiple paragraphs, …).
    */
   body?: string;
   acceptLabel?: string;
   rejectLabel?: string;
   customizeLabel?: string;
+  /** Accessible name of the banner landmark. */
+  ariaLabel?: string;
 }
 
 const {
+  title,
   body = 'We use cookies and similar technologies to improve your experience.',
   acceptLabel = 'Accept all',
   rejectLabel = 'Reject all',
   customizeLabel = 'Customize',
+  ariaLabel = title ?? 'Cookie consent',
 } = Astro.props;
 ---
 
-<div privion-banner hidden>
+<div privion-banner hidden role="region" aria-label={ariaLabel}>
   <slot>
-    <p>{body}</p>
-    <button privion-reject-all>{rejectLabel}</button>
-    <button privion-accept-all>{acceptLabel}</button>
-    <button privion-open-preferences>{customizeLabel}</button>
+    <div privion-banner-body>
+      {title && <h2>{title}</h2>}
+      <slot name="body">
+        <p>{body}</p>
+      </slot>
+    </div>
+    <div privion-banner-actions>
+      <button type="button" privion-open-preferences>{customizeLabel}</button>
+      <button type="button" privion-reject-all>{rejectLabel}</button>
+      <button type="button" privion-accept-all>{acceptLabel}</button>
+    </div>
   </slot>
 </div>
