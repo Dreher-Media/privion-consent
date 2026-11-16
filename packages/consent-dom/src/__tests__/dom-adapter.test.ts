@@ -336,5 +336,60 @@ describe('DOM Adapter', () => {
       openBtn.click();
       expect(checkbox.checked).toBe(false);
     });
+
+    describe('closing the preferences modal', () => {
+      function mount() {
+        const consent = createPrivionConsent(config);
+        container.innerHTML = `
+          <button privion-open-preferences>Open</button>
+          <div privion-preferences>
+            <div privion-preferences-panel>
+              <button privion-close-preferences>Close</button>
+              <input type="checkbox" privion-toggle="analytics" />
+            </div>
+          </div>
+        `;
+        initPrivionDom(consent, { root: container });
+        const openBtn = container.querySelector<HTMLButtonElement>('[privion-open-preferences]')!;
+        const prefs = container.querySelector<HTMLElement>('[privion-preferences]')!;
+        openBtn.focus();
+        openBtn.click();
+        expect(prefs.hidden).toBe(false);
+        return { consent, openBtn, prefs };
+      }
+
+      it('moves focus into the dialog on open and back to the trigger on close', () => {
+        const { openBtn } = mount();
+        expect(document.activeElement).toBe(
+          container.querySelector('input[privion-toggle="analytics"]'),
+        );
+        container.querySelector<HTMLButtonElement>('[privion-close-preferences]')!.click();
+        expect(document.activeElement).toBe(openBtn);
+      });
+
+      it('closes on the close button without committing staged edits', () => {
+        const { consent, prefs } = mount();
+        const checkbox = container.querySelector<HTMLInputElement>('[privion-toggle]')!;
+        checkbox.checked = true;
+        container.querySelector<HTMLButtonElement>('[privion-close-preferences]')!.click();
+        expect(prefs.hidden).toBe(true);
+        expect(consent.getState().categories.analytics).toBe('denied');
+        expect(consent.getState().userDecided).toBe(false);
+      });
+
+      it('closes on Escape', () => {
+        const { prefs } = mount();
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+        expect(prefs.hidden).toBe(true);
+      });
+
+      it('closes on a backdrop click but not on a click inside the panel', () => {
+        const { prefs } = mount();
+        container.querySelector<HTMLElement>('[privion-preferences-panel]')!.click();
+        expect(prefs.hidden).toBe(false);
+        prefs.click();
+        expect(prefs.hidden).toBe(true);
+      });
+    });
   });
 });

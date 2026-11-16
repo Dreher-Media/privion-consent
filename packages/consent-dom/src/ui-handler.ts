@@ -9,6 +9,8 @@ export class UIHandler {
   private preferences: HTMLElement | null = null;
   private hasInitializedVisibility = false;
   private unsubscribes: Array<() => void> = [];
+  /** Element that had focus before the preferences opened; restored on close. */
+  private returnFocus: HTMLElement | null = null;
 
   constructor(consent: PrivionConsent) {
     this.consent = consent;
@@ -105,6 +107,40 @@ export class UIHandler {
         this.showPreferences();
       });
     });
+
+    // Close preferences buttons (can be multiple) — discard the edit.
+    const closePrefsBtns = root.querySelectorAll('[privion-close-preferences]');
+    closePrefsBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.hidePreferences();
+      });
+    });
+
+    // Escape and a click on the backdrop (the `[privion-preferences]`
+    // element itself, outside the panel) close the modal too.
+    const prefs = this.preferences;
+    if (prefs) {
+      const onBackdropClick = (event: MouseEvent) => {
+        if (event.target === prefs) {
+          this.hidePreferences();
+        }
+      };
+      prefs.addEventListener('click', onBackdropClick);
+      this.unsubscribes.push(() => {
+        prefs.removeEventListener('click', onBackdropClick);
+      });
+
+      const doc = prefs.ownerDocument;
+      const onKeydown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape' && !prefs.hidden) {
+          this.hidePreferences();
+        }
+      };
+      doc.addEventListener('keydown', onKeydown);
+      this.unsubscribes.push(() => {
+        doc.removeEventListener('keydown', onKeydown);
+      });
+    }
 
     // Save preferences button
     const savePrefsBtn = root.querySelector('[privion-save-preferences]');
@@ -209,17 +245,32 @@ export class UIHandler {
    * Show preferences dialog
    */
   private showPreferences(): void {
-    if (this.preferences) {
-      this.preferences.hidden = false;
+    if (!this.preferences || !this.preferences.hidden) {
+      return;
     }
+    const active = this.preferences.ownerDocument.activeElement;
+    this.returnFocus = active instanceof HTMLElement ? active : null;
+    this.preferences.hidden = false;
+    // Move focus into the dialog so keyboard and screen-reader users
+    // land in it: the first switch they can change, else any control.
+    const target =
+      this.preferences.querySelector<HTMLElement>('[privion-toggle]') ??
+      this.preferences.querySelector<HTMLElement>('button, input:not([disabled]), [href]');
+    target?.focus();
   }
 
   /**
    * Hide preferences dialog
    */
   private hidePreferences(): void {
-    if (this.preferences) {
-      this.preferences.hidden = true;
+    if (!this.preferences || this.preferences.hidden) {
+      return;
+    }
+    this.preferences.hidden = true;
+    const back = this.returnFocus;
+    this.returnFocus = null;
+    if (back?.isConnected && !back.closest('[hidden]')) {
+      back.focus();
     }
   }
 

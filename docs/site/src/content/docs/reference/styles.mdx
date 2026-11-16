@@ -17,19 +17,26 @@ The stylesheet targets **both** attribute conventions used across the bindings �
 
 Every visual decision is exposed as a CSS custom property. Override them at `:root` (or any narrower scope) without touching the stylesheet itself.
 
-| Property                  | Default (light)                | Notes                                              |
-| ------------------------- | ------------------------------ | -------------------------------------------------- |
-| `--privion-bg`            | `#ffffff`                      | Banner / panel background                          |
-| `--privion-fg`            | `#111827`                      | Body text                                          |
-| `--privion-muted`         | `#6b7280`                      | Secondary text (descriptions, helper labels)       |
-| `--privion-border`        | `#e5e7eb`                      | Borders between toggle rows / panel edges          |
-| `--privion-accent`        | `#2563eb`                      | Primary buttons (Accept all, Save preferences)     |
-| `--privion-accent-fg`     | `#ffffff`                      | Text on primary buttons                            |
-| `--privion-radius`        | `0.75rem`                      | Banner / panel corner radius                       |
-| `--privion-shadow`        | `0 10px 30px rgb(0 0 0 / 12%)` | Banner / panel drop shadow                         |
-| `--privion-z-banner`      | `1000`                         | Banner `z-index`                                   |
-| `--privion-z-preferences` | `1001`                         | Preferences modal `z-index`                        |
-| `--privion-backdrop`      | `rgb(15 23 42 / 50%)`          | Preferences modal backdrop                         |
+| Property                   | Default (light)                     | Notes                                                                   |
+| -------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| `--privion-bg`             | `#ffffff`                           | Banner / panel background                                               |
+| `--privion-fg`             | `#16181d`                           | Body text                                                               |
+| `--privion-muted`          | `#5b616e`                           | Secondary text (descriptions, badges)                                   |
+| `--privion-border`         | `#e4e6eb`                           | Hairlines between toggle rows, secondary button outline                 |
+| `--privion-accent`         | `#16181d`                           | Accept all, Reject all, Save preferences, switch "on" track             |
+| `--privion-accent-fg`      | `#ffffff`                           | Text on those buttons, switch thumb when on                             |
+| `--privion-radius`         | `0.875rem`                          | Banner / panel corner radius                                            |
+| `--privion-shadow`         | layered soft shadow                 | Banner / panel elevation                                                |
+| `--privion-font`           | `inherit`                           | Font family; inherits the page font so the UI reads as part of the site |
+| `--privion-z-banner`       | `1000`                              | Banner `z-index`                                                        |
+| `--privion-z-preferences`  | `1001`                              | Preferences modal `z-index`                                             |
+| `--privion-backdrop`       | `rgb(16 18 24 / 45%)`               | Preferences modal backdrop                                              |
+| `--privion-control-radius` | _unset_ → `0.55 × --privion-radius` | Button radius. Set `--privion-radius: 0` and buttons go square too      |
+| `--privion-focus`          | _unset_ → accent at 55 %            | Focus ring                                                              |
+| `--privion-switch-on`      | _unset_ → `--privion-accent`        | Switch track when on                                                    |
+| `--privion-switch-off`     | _unset_ → fg at 22 % over bg        | Switch track when off                                                   |
+
+The four optional tokens are resolved where they are used, so overriding a base token in a narrower scope (see below) carries through to them.
 
 ## Dark mode
 
@@ -46,8 +53,12 @@ Out of the box, the stylesheet honors the OS preference via `@media (prefers-col
 Set `data-privion-theme` on `<html>` to pin a theme regardless of OS preference:
 
 ```html
-<html data-privion-theme="dark">...</html>
-<html data-privion-theme="light">...</html>
+<html data-privion-theme="dark">
+  ...
+</html>
+<html data-privion-theme="light">
+  ...
+</html>
 ```
 
 Useful for theme-toggle UIs where users override the system preference inside your app.
@@ -115,51 +126,68 @@ Import the bundled stylesheet, then add overriding rules:
 
 ## Layout details
 
-### Banner
+### Structural hooks
 
-```text
-fixed; inset: auto 1rem 1rem 1rem; max-width: 720px; margin-inline: auto;
-display: flex; flex-wrap: wrap; gap: 0.75rem;
-padding: 1rem 1.25rem; border-radius: var(--privion-radius);
-background: var(--privion-bg); color: var(--privion-fg);
-box-shadow: var(--privion-shadow); z-index: var(--privion-z-banner);
+The bundled Astro and React components emit a few attributes that exist only as layout hooks for the stylesheet. They carry no behavior. Hand-written markup without them still renders sensibly (the banner falls back to one wrapping row, toggles to plain rows), but using them gets you the full layout:
+
+```html
+<div privion-banner hidden role="region" aria-label="Cookie consent">
+  <div privion-banner-body><p>…</p></div>
+  <div privion-banner-actions>
+    <button type="button" privion-open-preferences>Customize</button>
+    <button type="button" privion-reject-all>Reject all</button>
+    <button type="button" privion-accept-all>Accept all</button>
+  </div>
+</div>
+
+<div privion-preferences hidden>
+  <div privion-preferences-panel role="dialog" aria-modal="true" aria-labelledby="pp-title">
+    <div privion-preferences-header>
+      <h2 id="pp-title">Privacy preferences</h2>
+      <button type="button" privion-close-preferences aria-label="Close">…</button>
+    </div>
+    <p privion-preferences-intro>…</p>
+    <div privion-preferences-categories>
+      <label privion-category>
+        <span privion-category-text>
+          <span privion-category-label>Analytics</span>
+          <span privion-category-description>…</span>
+        </span>
+        <input type="checkbox" role="switch" privion-toggle="analytics" />
+      </label>
+    </div>
+    <div privion-preferences-footer>
+      <button type="button" privion-save-preferences>Save preferences</button>
+    </div>
+  </div>
+</div>
 ```
 
-On mobile (width &lt; 720px) the banner stretches to viewport width minus 2rem of padding. The flex-wrap means buttons stack when there isn't horizontal space.
+React emits the same hooks with a `data-` prefix.
+
+### Banner
+
+A floating card, centred at the bottom, up to `44rem` wide. The copy takes the first row; underneath, Customize sits on the start side and Reject all / Accept all on the end side. Below `34rem` viewport width the card docks closer to the edges and the buttons go full width: Reject all and Accept all side by side, Customize underneath.
 
 ### Preferences modal
 
-```text
-fixed; inset: 0; padding: 1.5rem; background: var(--privion-backdrop);
-display: flex; justify-content: center; align-items: flex-start;
-z-index: var(--privion-z-preferences);
-```
+A centred card up to `30rem` wide over a dimmed backdrop, with a header (title and close button), an optional intro, a scrollable list of category rows and a footer with the save button. On small screens it docks to the bottom edge. The panel never exceeds the viewport height; the category list scrolls instead.
 
-The inner panel is centered horizontally, anchored 4rem from the top so it doesn't jump on tall content.
+The DOM adapter closes it on the close button (`[privion-close-preferences]`), on Escape and on a click on the backdrop. Closing discards unsaved toggle changes. Opening moves focus to the first switch; closing returns focus to the element that opened it.
 
-### Buttons
+### Buttons and switches
 
-```text
-font: inherit; cursor: pointer; border-radius: var(--privion-radius);
-padding: 0.5rem 1rem; border: 1px solid var(--privion-border);
-background: transparent; color: inherit;
-```
+Reject all and Accept all carry **equal visual weight**. Supervisory authorities (DSK, CNIL, EDPB) expect rejecting to be as easy and as visible as accepting, so the default skin does not demote "Reject all" to a ghost button. Save preferences shares that style; Customize and other buttons are outlined.
 
-Primary button (`[privion-accept-all]` / `[privion-save-preferences]`):
-
-```text
-background: var(--privion-accent); color: var(--privion-accent-fg);
-border-color: transparent;
-```
+Every checkbox inside the preferences renders as a switch. The native input stays in place, so keyboard use and form semantics are unchanged.
 
 ## Accessibility
 
-The stylesheet provides reasonable defaults but the markup is your responsibility. Recommendations:
-
-- The banner is a `<div>` with `role="region" aria-label="Privacy"`. Add these to your markup if you don't use the bundled React components.
-- The preferences modal should be focus-trapped. `<dialog>` is the simplest path; the React bindings render plain `<div>` for max compatibility but you can wrap your own.
-- Keyboard navigation works out of the box — buttons are real `<button>` elements, checkboxes are real `<input type="checkbox">`.
-- Color contrast: the default accent (`#2563eb`) has 5.1:1 contrast against white; the dark-mode accent (`#3b82f6`) has 4.7:1 against `#0b1220`. Both clear WCAG AA.
+- The bundled banner is a `role="region"` landmark with an accessible name; the preferences panel is `role="dialog"` with `aria-modal` and a labelled title. Add the same to hand-written markup.
+- Focus moves into the dialog on open and back to the trigger on close; Escape closes it. Focus is not trapped; if you need a hard trap, wrap your own `<dialog>`.
+- Buttons are at least 44px tall, and every control shows a visible `:focus-visible` ring.
+- `prefers-reduced-motion` turns off the entrance animations and switch transitions.
+- Color contrast: the default text, muted text and button colors clear WCAG AA in both themes.
 
 ## Reference
 

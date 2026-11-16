@@ -2,9 +2,9 @@
 /**
  * Single category toggle row.
  *
- * Required categories render as a disabled, force-checked checkbox
+ * Required categories render as a disabled, force-checked switch
  * carrying `privion-required="<id>"`. Optional categories render as
- * a checkbox carrying `privion-toggle="<id>"` so the DOM adapter
+ * a switch carrying `privion-toggle="<id>"` so the DOM adapter
  * picks them up and routes changes through `setMany(_, 'preferences')`
  * when the user clicks Save.
  *
@@ -24,18 +24,28 @@ const { category, alwaysOnLabel = 'always on' } = Astro.props;
 const optionalChecked = category.defaultStatus === 'granted';
 ---
 
-{
-  category.required ? (
-    <label>
-      <input type="checkbox" checked disabled privion-required={category.id} />
-      {category.label} ({alwaysOnLabel})
-      {category.description && <span> - {category.description}</span>}
-    </label>
-  ) : (
-    <label>
-      <input type="checkbox" checked={optionalChecked} privion-toggle={category.id} />
+<label privion-category>
+  <span privion-category-text>
+    <span privion-category-label>
       {category.label}
-      {category.description && <span> - {category.description}</span>}
-    </label>
-  )
-}
+      {category.required && <span privion-category-badge>{alwaysOnLabel}</span>}
+    </span>
+    {
+      category.description && (
+        <span privion-category-description>{category.description}</span>
+      )
+    }
+  </span>
+  {
+    category.required ? (
+      <input type="checkbox" role="switch" checked disabled privion-required={category.id} />
+    ) : (
+      <input
+        type="checkbox"
+        role="switch"
+        checked={optionalChecked}
+        privion-toggle={category.id}
+      />
+    )
+  }
+</label>

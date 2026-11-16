@@ -73,35 +73,78 @@
       </div>
     </div>
 
-    <!-- Banner — `hidden` until DOM adapter checks `state.userDecided` -->
-    <div privion-banner hidden>
-      <p>We use cookies and similar technologies to improve your experience.</p>
-      <button privion-reject-all>Reject all</button>
-      <button privion-open-preferences>Customize</button>
-      <button privion-accept-all>Accept all</button>
+    <!-- Banner — `hidden` until DOM adapter checks `state.userDecided`.
+         The body/actions wrappers are layout hooks for the default
+         stylesheet; flat markup works too, it just wraps as one row. -->
+    <div privion-banner hidden role="region" aria-label="Cookie consent">
+      <div privion-banner-body>
+        <p>
+          We use cookies and similar technologies to improve your experience.
+          <a href="#privacy">Privacy policy</a>
+        </p>
+      </div>
+      <div privion-banner-actions>
+        <button type="button" privion-open-preferences>Customize</button>
+        <button type="button" privion-reject-all>Reject all</button>
+        <button type="button" privion-accept-all>Accept all</button>
+      </div>
     </div>
 
     <!-- Preferences modal. The contents sit in a single panel wrapper so the
          default stylesheet styles one element as the modal card; flat children
-         would each render as a separate card. -->
+         would each render as a separate card. The close button, Escape and a
+         backdrop click all discard unsaved edits. -->
     <div privion-preferences hidden>
-      <div privion-preferences-panel>
-        <h2>Privacy preferences</h2>
-        <label>
-          <input type="checkbox" privion-required="necessary" disabled checked />
-          Necessary <span>always on — required for the site to function</span>
-        </label>
-        <label>
-          <input type="checkbox" privion-toggle="analytics" />
-          Analytics <span>helps us understand how visitors use the site</span>
-        </label>
-        <label>
-          <input type="checkbox" privion-toggle="marketing" />
-          Marketing <span>personalized ads and remarketing</span>
-        </label>
-        <p style="margin-top: 1rem; text-align: right">
-          <button privion-save-preferences>Save preferences</button>
-        </p>
+      <div
+        privion-preferences-panel
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="privion-preferences-title"
+      >
+        <div privion-preferences-header>
+          <h2 id="privion-preferences-title">Privacy preferences</h2>
+          <button type="button" privion-close-preferences aria-label="Close">
+            <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path
+                d="M5 5l10 10M15 5L5 15"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+              ></path>
+            </svg>
+          </button>
+        </div>
+        <p privion-preferences-intro>Choose which optional services may run on this site.</p>
+        <div privion-preferences-categories>
+          <label privion-category>
+            <span privion-category-text>
+              <span privion-category-label>
+                Necessary <span privion-category-badge>always on</span>
+              </span>
+              <span privion-category-description>Required for the site to function.</span>
+            </span>
+            <input type="checkbox" role="switch" privion-required="necessary" disabled checked />
+          </label>
+          <label privion-category>
+            <span privion-category-text>
+              <span privion-category-label>Analytics</span>
+              <span privion-category-description
+                >Helps us understand how visitors use the site.</span
+              >
+            </span>
+            <input type="checkbox" role="switch" privion-toggle="analytics" />
+          </label>
+          <label privion-category>
+            <span privion-category-text>
+              <span privion-category-label>Marketing</span>
+              <span privion-category-description>Personalized ads and remarketing.</span>
+            </span>
+            <input type="checkbox" role="switch" privion-toggle="marketing" />
+          </label>
+        </div>
+        <div privion-preferences-footer>
+          <button type="button" privion-save-preferences>Save preferences</button>
+        </div>
       </div>
     </div>
 
@@ -119,7 +162,14 @@
       width="560"
       height="315"
       frameborder="0"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allow="
+        accelerometer;
+        autoplay;
+        clipboard-write;
+        encrypted-media;
+        gyroscope;
+        picture-in-picture;
+      "
       allowfullscreen
     ></iframe>
 

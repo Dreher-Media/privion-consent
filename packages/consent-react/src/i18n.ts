@@ -9,53 +9,67 @@
 export interface ConsentI18n {
   bannerTitle?: string;
   bannerBody: string;
+  /** Accessible name of the banner landmark when there is no `bannerTitle`. */
+  bannerLabel?: string;
   acceptAll: string;
   rejectAll: string;
   customize: string;
   preferencesTitle: string;
+  /** Optional short paragraph under the preferences title. */
+  preferencesDescription?: string;
   save: string;
+  /** Accessible name of the preferences close button. */
+  close?: string;
   alwaysOn: string;
   categories?: Record<string, { label?: string; description?: string }>;
 }
 
 export const enLocale: ConsentI18n = {
   bannerBody: 'We use cookies and similar technologies to improve your experience.',
+  bannerLabel: 'Cookie consent',
   acceptAll: 'Accept all',
   rejectAll: 'Reject all',
   customize: 'Customize',
   preferencesTitle: 'Privacy preferences',
   save: 'Save preferences',
+  close: 'Close',
   alwaysOn: 'always on',
 };
 
 export const deLocale: ConsentI18n = {
   bannerBody: 'Wir verwenden Cookies und ähnliche Technologien, um dein Erlebnis zu verbessern.',
+  bannerLabel: 'Cookie-Einwilligung',
   acceptAll: 'Alle akzeptieren',
   rejectAll: 'Alle ablehnen',
   customize: 'Anpassen',
   preferencesTitle: 'Datenschutzeinstellungen',
   save: 'Einstellungen speichern',
+  close: 'Schließen',
   alwaysOn: 'immer aktiv',
 };
 
 export const frLocale: ConsentI18n = {
   bannerBody:
     'Nous utilisons des cookies et des technologies similaires pour améliorer votre expérience.',
+  bannerLabel: 'Consentement aux cookies',
   acceptAll: 'Tout accepter',
   rejectAll: 'Tout refuser',
   customize: 'Personnaliser',
   preferencesTitle: 'Préférences de confidentialité',
   save: 'Enregistrer les préférences',
+  close: 'Fermer',
   alwaysOn: 'toujours actif',
 };
 
 export const esLocale: ConsentI18n = {
   bannerBody: 'Utilizamos cookies y tecnologías similares para mejorar tu experiencia.',
+  bannerLabel: 'Consentimiento de cookies',
   acceptAll: 'Aceptar todo',
   rejectAll: 'Rechazar todo',
   customize: 'Personalizar',
   preferencesTitle: 'Preferencias de privacidad',
   save: 'Guardar preferencias',
+  close: 'Cerrar',
   alwaysOn: 'siempre activo',
 };
 
