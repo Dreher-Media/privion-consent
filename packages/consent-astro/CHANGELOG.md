@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/Dreher-Media/privion-consent/compare/consent-astro-v1.3.0...consent-astro-v1.4.0) (2026-11-16)
+
+
+### Features
+
+* harden the consent lifecycle ([#66](https://github.com/Dreher-Media/privion-consent/issues/66)) ([6b1b5f0](https://github.com/Dreher-Media/privion-consent/commit/6b1b5f051034e463f3d94a9f4b968d3e27ad523a))
+
 ## [1.3.0](https://github.com/Dreher-Media/privion-consent/compare/consent-astro-v1.2.0...consent-astro-v1.3.0) (2026-11-16)
 
 
