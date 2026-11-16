@@ -19,6 +19,11 @@ export default defineConfig({
   // replace Starlight's whole pipeline.)
   markdown: {
     rehypePlugins: [[rehypeBaseUrls, { base }]],
+    // Set explicitly: since Astro 6.4 the MDX integration Starlight bundles
+    // (@astrojs/mdx 5.0.x, pinned to markdown-remark 7.1.2) no longer
+    // inherits the default, so every table in the .mdx pages rendered as
+    // raw `| … |` text. Plain .md pages were unaffected.
+    gfm: true,
   },
   integrations: [
     starlight({
