@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/Dreher-Media/privion-consent/compare/consent-react-v1.0.0...consent-react-v1.1.0) (2026-11-16)
+
+
+### Features
+
+* polish the default banner and preferences UI ([#64](https://github.com/Dreher-Media/privion-consent/issues/64)) ([48154a6](https://github.com/Dreher-Media/privion-consent/commit/48154a6f7b9e6cbe4edc6059a1b4559d82c3ddbe))
+
+
+### Bug Fixes
+
+* render the consent preferences modal as a single card ([#43](https://github.com/Dreher-Media/privion-consent/issues/43)) ([c075040](https://github.com/Dreher-Media/privion-consent/commit/c07504031fe9e4a5355b4134d4240cf2a4032d86))
+
 ## [1.0.0](https://github.com/Dreher-Media/privion-consent/compare/consent-react-v0.1.0...consent-react-v1.0.0) (2026-05-11)
 
 
