@@ -6,7 +6,7 @@ declare global {
     // to match the real-world signature without forcing every caller to
     // satisfy a narrow type.
     gtag?: (...args: unknown[]) => void;
-    dataLayer?: Array<Record<string, unknown>>;
+    dataLayer?: unknown[];
   }
 }
 
@@ -80,56 +80,63 @@ export function computeGoogleConsentMode(
 }
 
 /**
- * Send Google Consent Mode update to the tag provider.
+ * Push a Google Consent Mode command.
  *
- * Mode semantics:
+ * - With `window.gtag` present, call it directly.
+ * - Otherwise push onto `window.dataLayer` (created if missing) in the
+ *   gtag argument format — `dataLayer.push(arguments)` — which is the
+ *   only shape Google Tag Manager reads consent from. A plain object
+ *   such as `{ event: 'consent_default', ... }` is ignored by GTM's
+ *   consent APIs.
+ * - Always dispatch `privion:google-consent-mode` on `window` so other
+ *   integrations can observe the signal.
  *
- * - `basic`: do not announce a `default` payload before the user
- *   decides. The host app blocks Google tags entirely until consent
- *   (typically via `<script type="privion">`), so pre-consent gtag
- *   chatter is meaningless. Returns early when `command === 'default'`.
- * - `advanced`: emit `default` immediately so any non-blocked Google
- *   tags know to switch into anonymized cookieless pings until the
- *   user accepts. After consent, emit `update`.
- *
- * In both modes `update` is always sent. The function tries gtag
- * first, falls back to a `dataLayer` push, and finally dispatches a
- * `privion:google-consent-mode` custom event so consumers without
- * gtag/dataLayer can observe the change.
+ * In `basic` mode the `default` command is skipped: Google tags are not
+ * supposed to load at all before consent there.
  */
 export function syncGoogleConsentMode(
   mapping: GoogleConsentMapping,
   mode: 'basic' | 'advanced' = 'basic',
   isFirstLoad: boolean = false,
+  options: { waitForUpdate?: number } = {},
 ): void {
   const command: GcmCommand = isFirstLoad ? 'default' : 'update';
 
-  // In basic mode the library does not announce a pre-consent default.
   if (mode === 'basic' && command === 'default') {
     return;
   }
-
-  // Try gtag first (Google Tag Manager / Google Analytics)
-  if (typeof window !== 'undefined' && window.gtag) {
-    window.gtag('consent', command, mapping);
+  if (typeof window === 'undefined') {
     return;
   }
 
-  // Try dataLayer (Google Tag Manager)
-  if (typeof window !== 'undefined' && Array.isArray(window.dataLayer)) {
-    window.dataLayer.push({
-      event: 'consent_' + command,
-      ...mapping,
-    });
-    return;
+  const payload: Record<string, unknown> = { ...mapping };
+  if (command === 'default') {
+    payload.wait_for_update = options.waitForUpdate ?? 500;
   }
 
-  // Fallback: dispatch custom event
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('privion:google-consent-mode', {
-        detail: { command, mapping, mode },
-      }),
-    );
+  if (typeof window.gtag === 'function') {
+    window.gtag('consent', command, payload);
+  } else {
+    const dataLayer = (window.dataLayer = window.dataLayer || []);
+    pushGtagArguments(dataLayer, ['consent', command, payload]);
   }
+
+  window.dispatchEvent(
+    new CustomEvent('privion:google-consent-mode', {
+      detail: { command, mapping, mode },
+    }),
+  );
+}
+
+/**
+ * The gtag shim from Google's snippet, `function gtag(){dataLayer.push(arguments)}`:
+ * GTM only treats an `arguments` object (not an array, not a plain
+ * object) as a gtag command.
+ */
+function pushGtagArguments(dataLayer: unknown[], args: unknown[]): void {
+  const gtag = function (): void {
+    // eslint-disable-next-line prefer-rest-params
+    dataLayer.push(arguments);
+  } as (...a: unknown[]) => void;
+  gtag(...args);
 }

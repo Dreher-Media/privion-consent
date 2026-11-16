@@ -9,6 +9,7 @@ export default defineConfig({
         index: resolve(__dirname, 'src/index.ts'),
         server: resolve(__dirname, 'src/server.ts'),
         boot: resolve(__dirname, 'src/boot.ts'),
+        serialize: resolve(__dirname, 'src/serialize.ts'),
       },
       formats: ['es'],
     },

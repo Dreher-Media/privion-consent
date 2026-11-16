@@ -6,6 +6,8 @@ interface IframeElement {
   element: HTMLIFrameElement;
   categories: string[];
   realSrc: string | null;
+  /** The `src` the iframe had before activation (placeholder or none). */
+  placeholderSrc: string | null;
   activated: boolean;
 }
 
@@ -83,6 +85,7 @@ export class IframeHandler {
       element: iframe,
       categories,
       realSrc,
+      placeholderSrc: iframe.getAttribute('src'),
       activated: false,
     });
 
@@ -97,12 +100,30 @@ export class IframeHandler {
    */
   private handleConsentUpdate(state: ConsentState): void {
     for (const [iframe, data] of this.iframes.entries()) {
-      if (!data.activated && data.realSrc) {
-        if (areCategoriesAllowed(data.categories, state, this.mode)) {
-          this.activateIframe(iframe);
-        }
+      if (!data.realSrc) {
+        continue;
+      }
+      const allowed = areCategoriesAllowed(data.categories, state, this.mode);
+      if (!data.activated && allowed) {
+        this.activateIframe(iframe);
+      } else if (data.activated && !allowed) {
+        this.deactivateIframe(iframe);
       }
     }
+  }
+
+  /**
+   * Withdrawn consent unloads the embed: the iframe goes back to its
+   * placeholder `src` (or `about:blank`), which ends the third party's
+   * session in it.
+   */
+  private deactivateIframe(iframe: HTMLIFrameElement): void {
+    const data = this.iframes.get(iframe);
+    if (!data || !data.activated) {
+      return;
+    }
+    data.activated = false;
+    iframe.src = data.placeholderSrc ?? 'about:blank';
   }
 
   /**

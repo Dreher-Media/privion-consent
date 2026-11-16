@@ -20,15 +20,32 @@ const allDenied: GoogleConsentMapping = {
 };
 
 /**
- * The function guards on `Array.isArray(window.dataLayer)`, so the stub
- * has to be a real array. Reading from this array is how we observe the
- * commands the function would have sent.
+ * Reading from this array is how we observe the commands the function
+ * would have sent. Entries are gtag `arguments` objects:
+ * `['consent', 'default' | 'update', payload]`.
  */
-function installDataLayer(): Array<Record<string, unknown>> {
-  const dataLayer: Array<Record<string, unknown>> = [];
+function installDataLayer(): unknown[] {
+  const dataLayer: unknown[] = [];
   (window as unknown as { dataLayer: typeof dataLayer }).dataLayer = dataLayer;
   delete (window as { gtag?: unknown }).gtag;
   return dataLayer;
+}
+
+interface GtagCall {
+  isArguments: boolean;
+  name: unknown;
+  command: unknown;
+  payload: Record<string, unknown>;
+}
+
+function call(entry: unknown): GtagCall {
+  const args = entry as ArrayLike<unknown>;
+  return {
+    isArguments: Object.prototype.toString.call(entry) === '[object Arguments]',
+    name: args[0],
+    command: args[1],
+    payload: args[2] as Record<string, unknown>,
+  };
 }
 
 function uninstallDataLayer(): void {
@@ -36,7 +53,7 @@ function uninstallDataLayer(): void {
 }
 
 describe('syncGoogleConsentMode (low-level)', () => {
-  let dataLayer: Array<Record<string, unknown>>;
+  let dataLayer: unknown[];
 
   beforeEach(() => {
     dataLayer = installDataLayer();
@@ -46,10 +63,34 @@ describe('syncGoogleConsentMode (low-level)', () => {
   it('emits "default" in advanced mode on first load', () => {
     syncGoogleConsentMode(allDenied, 'advanced', true);
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0]).toMatchObject({
-      event: 'consent_default',
-      ad_storage: 'denied',
-    });
+    const c = call(dataLayer[0]);
+    // GTM reads consent only from gtag `arguments` objects.
+    expect(c.isArguments).toBe(true);
+    expect(c.name).toBe('consent');
+    expect(c.command).toBe('default');
+    expect(c.payload).toMatchObject({ ad_storage: 'denied', wait_for_update: 500 });
+  });
+
+  it('honors a custom wait_for_update on "default"', () => {
+    syncGoogleConsentMode(allDenied, 'advanced', true, { waitForUpdate: 1200 });
+    expect(call(dataLayer[0]).payload.wait_for_update).toBe(1200);
+  });
+
+  it('creates window.dataLayer when neither gtag nor dataLayer exist', () => {
+    uninstallDataLayer();
+    syncGoogleConsentMode(allDenied, 'advanced', true);
+    const created = (window as { dataLayer?: unknown[] }).dataLayer;
+    expect(created).toHaveLength(1);
+    expect(call(created![0]).command).toBe('default');
+  });
+
+  it('calls window.gtag directly when present', () => {
+    const calls: unknown[][] = [];
+    (window as { gtag?: unknown }).gtag = (...args: unknown[]) => calls.push(args);
+    syncGoogleConsentMode(allDenied, 'advanced', false);
+    delete (window as { gtag?: unknown }).gtag;
+    expect(calls).toEqual([['consent', 'update', { ...allDenied }]]);
+    expect(dataLayer).toHaveLength(0);
   });
 
   it('skips "default" in basic mode (no pre-consent chatter)', () => {
@@ -60,18 +101,20 @@ describe('syncGoogleConsentMode (low-level)', () => {
   it('emits "update" in basic mode on subsequent calls', () => {
     syncGoogleConsentMode(allDenied, 'basic', false);
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0]).toMatchObject({ event: 'consent_update' });
+    expect(call(dataLayer[0]).command).toBe('update');
+    expect(call(dataLayer[0]).payload).not.toHaveProperty('wait_for_update');
   });
 
   it('emits "update" in advanced mode on subsequent calls', () => {
     syncGoogleConsentMode(allDenied, 'advanced', false);
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0]).toMatchObject({ event: 'consent_update' });
+    expect(call(dataLayer[0]).command).toBe('update');
+    expect(call(dataLayer[0]).payload).not.toHaveProperty('wait_for_update');
   });
 });
 
 describe('PrivionConsent <> Google Consent Mode integration', () => {
-  let dataLayer: Array<Record<string, unknown>>;
+  let dataLayer: unknown[];
 
   beforeEach(() => {
     localStorage.clear();
@@ -87,7 +130,7 @@ describe('PrivionConsent <> Google Consent Mode integration', () => {
   it('emits a "default" event in advanced mode for a new visitor on init', () => {
     createPrivionConsent({ ...baseConfig, googleConsentMode: { mode: 'advanced' } });
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0]!.event).toBe('consent_default');
+    expect(call(dataLayer[0]).command).toBe('default');
   });
 
   it('emits "update" on init for a returning (decided) visitor — both modes', () => {
@@ -110,8 +153,8 @@ describe('PrivionConsent <> Google Consent Mode integration', () => {
     });
 
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0]!.event).toBe('consent_update');
-    expect(dataLayer[0]!.analytics_storage).toBe('granted');
+    expect(call(dataLayer[0]).command).toBe('update');
+    expect(call(dataLayer[0]).payload.analytics_storage).toBe('granted');
   });
 
   it('emits "update" after acceptAll in basic mode', () => {
@@ -124,8 +167,8 @@ describe('PrivionConsent <> Google Consent Mode integration', () => {
     consent.acceptAll();
 
     expect(dataLayer).toHaveLength(1);
-    expect(dataLayer[0]!.event).toBe('consent_update');
-    expect(dataLayer[0]!.analytics_storage).toBe('granted');
-    expect(dataLayer[0]!.ad_storage).toBe('granted');
+    expect(call(dataLayer[0]).command).toBe('update');
+    expect(call(dataLayer[0]).payload.analytics_storage).toBe('granted');
+    expect(call(dataLayer[0]).payload.ad_storage).toBe('granted');
   });
 });

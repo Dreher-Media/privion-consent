@@ -13,7 +13,13 @@ The `@privion-consent/dom` adapter inspects the page for the attributes below. T
 
 ### `<script type="privion">`
 
-Blocks a script until consent is granted. `type="privion"` is not a recognized JavaScript MIME, so the browser refuses to execute it. When the matching categories are granted, the adapter creates a **new** executable `<script>` element copying every relevant attribute (`src`, inline `textContent`, `async`, `defer`, `nonce`, `crossOrigin`) and inserts it right after the original.
+Blocks a script until consent is granted. `type="privion"` is not a recognized JavaScript MIME, so the browser refuses to execute it. When the matching categories are granted, the adapter creates a **new** executable `<script>` element carrying over every attribute except `type` and the `privion-*` ones (`src`, `integrity`, `crossorigin`, `referrerpolicy`, `nonce`, `data-*`, …) plus inline `textContent`, and inserts it right after the original. The `id` moves to the new element so it stays unique. Without `async` the script keeps insertion order.
+
+To activate a module script, put the real type in `privion-type`:
+
+```html
+<script type="privion" privion-type="module" privion-category="marketing" src="..."></script>
+```
 
 ```html
 <script
@@ -38,7 +44,7 @@ Inline script:
 </script>
 ```
 
-**One-shot activation.** Once activated, the original stays in place but inert. Toggling the category back to `denied` does **not** unload the now-running script — that's a host concern (typically a page reload). This matches how third-party tags actually behave in practice; truly tearing down GA or GTM mid-session is unreliable.
+**Withdrawal reloads the page.** A running script cannot be stopped. When the category of a script that already ran goes back to `denied`, the DOM adapter reloads the page once, so the withdrawal takes effect. Opt out with `initPrivionDom(consent, { reloadOnRevoke: false })` if the host handles it.
 
 ### `<iframe privion-src=...>`
 
@@ -54,7 +60,7 @@ Block an iframe until consent. Render with `src="about:blank"` so it loads nothi
 ></iframe>
 ```
 
-On grant, the adapter writes `iframe.src = realSrc`. Also one-shot.
+On grant, the adapter writes `iframe.src = realSrc`. On withdrawal it writes the original `src` back (or `about:blank` if there was none), which unloads the embed.
 
 ### `[privion="..."]` (visibility)
 
@@ -131,9 +137,10 @@ The adapter also re-hides the modal after `[privion-save-preferences]` fires. Th
 | `[privion-accept-all]`          | Calls `consent.acceptAll()`. Hides banner + preferences.           |
 | `[privion-reject-all]`          | Calls `consent.rejectAll()`. Hides banner + preferences.           |
 | `[privion-open-preferences]`    | Un-hides `[privion-preferences]`.                                  |
-| `[privion-save-preferences]`    | Collects every `[privion-toggle]` checkbox, calls `setMany(updates, 'preferences')`. Hides preferences. |
+| `[privion-close-preferences]`   | Hides `[privion-preferences]` and discards unsaved switch changes. |
+| `[privion-save-preferences]`    | Collects every `[privion-toggle]` checkbox, calls `setMany(updates, 'preferences')`. Always recorded as a decision. Hides banner + preferences. |
 
-Multiple buttons with the same attribute work — useful for "open preferences" links scattered throughout the page (footer, privacy policy, in-content). All call `consent.acceptAll()` / etc., which is idempotent on the engine.
+Buttons are wired by event delegation on the adapter's root: any number of buttons with the same attribute work, including ones added after init (an "Accept all" in the preferences footer, a "Load and accept" button in an embed placeholder) and clicks on elements nested inside a button.
 
 ### `[privion-toggle="<categoryId>"]`
 
