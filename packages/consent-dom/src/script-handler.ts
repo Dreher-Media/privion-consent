@@ -26,9 +26,21 @@ export class ScriptHandler {
   private unsubscribeReady: (() => void) | null = null;
   private observer: MutationObserver | null = null;
 
-  constructor(consent: PrivionConsent, mode: CategoryMatchMode = 'any') {
+  private onRevoke: (() => void) | null;
+
+  /**
+   * @param onRevoke - called once when consent for a script that already
+   *   ran is withdrawn. A script cannot be un-run, so the DOM adapter
+   *   reloads the page here by default (see `reloadOnRevoke`).
+   */
+  constructor(
+    consent: PrivionConsent,
+    mode: CategoryMatchMode = 'any',
+    onRevoke: (() => void) | null = null,
+  ) {
     this.consent = consent;
     this.mode = mode;
+    this.onRevoke = onRevoke;
   }
 
   /**
@@ -96,12 +108,21 @@ export class ScriptHandler {
    * Handle consent state updates
    */
   private handleConsentUpdate(state: ConsentState): void {
+    let revoked = false;
     for (const [script, data] of this.scripts.entries()) {
-      if (!data.activated) {
-        if (areCategoriesAllowed(data.categories, state, this.mode)) {
-          this.activateScript(script);
-        }
+      const allowed = areCategoriesAllowed(data.categories, state, this.mode);
+      if (!data.activated && allowed) {
+        this.activateScript(script);
+      } else if (data.activated && !allowed) {
+        revoked = true;
       }
+    }
+    if (revoked && this.onRevoke) {
+      const onRevoke = this.onRevoke;
+      // Fire once: after a reload the handler is gone anyway, and a host
+      // that passed its own callback should not get it per script.
+      this.onRevoke = null;
+      onRevoke();
     }
   }
 
@@ -117,28 +138,35 @@ export class ScriptHandler {
 
     const newScript = document.createElement('script');
 
-    if (originalScript.src) {
-      newScript.src = originalScript.src;
-    } else if (originalScript.textContent) {
-      newScript.textContent = originalScript.textContent;
+    // Carry every attribute over (src, integrity, crossorigin,
+    // referrerpolicy, nonce, id, data-*, …) except the ones that only
+    // exist for Privion. `privion-type` sets the real type, e.g.
+    // `<script type="privion" privion-type="module">`.
+    for (const attr of Array.from(originalScript.attributes)) {
+      if (attr.name === 'type' || attr.name.startsWith('privion-')) {
+        continue;
+      }
+      newScript.setAttribute(attr.name, attr.value);
     }
-    if (originalScript.async) {
-      newScript.async = true;
+    // An id must stay unique: it moves to the script that actually runs.
+    if (originalScript.id) {
+      originalScript.removeAttribute('id');
     }
-    if (originalScript.defer) {
-      newScript.defer = true;
+    const realType = originalScript.getAttribute('privion-type');
+    if (realType) {
+      newScript.type = realType;
     }
+    // `nonce` is hidden from getAttribute after parsing; copy the property.
     if (originalScript.nonce) {
       newScript.nonce = originalScript.nonce;
     }
-    if (originalScript.crossOrigin) {
-      newScript.crossOrigin = originalScript.crossOrigin;
+    // Dynamically inserted scripts default to async. Keep the author's
+    // intent: without `async` they run in insertion order.
+    newScript.async = originalScript.hasAttribute('async');
+    if (!originalScript.src && originalScript.textContent) {
+      newScript.textContent = originalScript.textContent;
     }
 
-    // Insert after the original (preserves source-order intent for
-    // tracking scripts that expect to run in document order). Fall
-    // back to <head>/<body> if the original has been detached since
-    // registration (rare but possible during framework reconciliation).
     const insertAfter = originalScript.nextSibling;
     const parent = originalScript.parentNode;
     if (parent) {

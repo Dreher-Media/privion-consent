@@ -26,7 +26,16 @@ export function initPrivionDom(
   const root: HTMLElement | Document = options.root || document;
   const categoryMatchMode = options.categoryMatchMode || 'any';
 
-  const scriptHandler = new ScriptHandler(consent, categoryMatchMode);
+  const reloadOnRevoke = options.reloadOnRevoke ?? true;
+  const scriptHandler = new ScriptHandler(
+    consent,
+    categoryMatchMode,
+    reloadOnRevoke
+      ? () => {
+          window.location.reload();
+        }
+      : null,
+  );
   const iframeHandler = new IframeHandler(consent, categoryMatchMode);
   const visibilityHandler = new VisibilityHandler(consent);
   const uiHandler = new UIHandler(consent);

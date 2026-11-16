@@ -72,6 +72,54 @@ function deleteCookie(name: string, options: CookieOptions = {}): void {
 /**
  * Cookie-backed storage adapter.
  */
+const STATUSES = new Set(['granted', 'denied', 'unknown']);
+const SOURCES = new Set(['banner', 'preferences', 'api']);
+
+/**
+ * Parse and validate a stored consent state. Anything that does not have
+ * the expected shape — hand-edited, truncated, written by a foreign
+ * script — is discarded (returns `null`) so the engine falls back to
+ * defaults instead of throwing on it.
+ */
+export function parseStoredState(raw: string): ConsentState | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to parse stored consent:', e);
+    return null;
+  }
+  return validateStoredState(value);
+}
+
+/**
+ * Shape check for a stored consent state from any adapter, built-in or
+ * custom. Returns `null` for anything unexpected.
+ */
+export function validateStoredState(value: unknown): ConsentState | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const v = value as Record<string, unknown>;
+  const categories = v.categories;
+  if (
+    typeof v.version !== 'number' ||
+    !Number.isFinite(v.version) ||
+    typeof v.updatedAt !== 'string' ||
+    !categories ||
+    typeof categories !== 'object' ||
+    Array.isArray(categories) ||
+    !Object.values(categories).every((status) => STATUSES.has(status as string)) ||
+    (v.source !== undefined && !SOURCES.has(v.source as string)) ||
+    (v.userDecided !== undefined && typeof v.userDecided !== 'boolean') ||
+    (v.decidedAt !== undefined && typeof v.decidedAt !== 'string')
+  ) {
+    console.warn('Ignoring stored consent with an unexpected shape');
+    return null;
+  }
+  return value as ConsentState;
+}
+
 export class CookieStorage implements ConsentStorageAdapter {
   private readonly key: string;
   private readonly cookieOptions: CookieOptions;
@@ -91,7 +139,7 @@ export class CookieStorage implements ConsentStorageAdapter {
       return null;
     }
     try {
-      return JSON.parse(data) as ConsentState;
+      return parseStoredState(data);
     } catch (e) {
       console.warn('Failed to parse stored consent:', e);
       return null;
@@ -134,7 +182,7 @@ export class LocalStorageAdapter implements ConsentStorageAdapter {
       return null;
     }
     try {
-      return JSON.parse(data) as ConsentState;
+      return parseStoredState(data);
     } catch (e) {
       console.warn('Failed to parse stored consent:', e);
       return null;

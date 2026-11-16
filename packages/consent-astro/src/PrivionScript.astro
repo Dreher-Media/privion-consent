@@ -16,6 +16,7 @@
  * pending state change events synchronously on construction.
  */
 import type { PrivionConsentConfig } from '@privion-consent/core';
+import { serializeConfig } from './serialize.js';
 
 export interface Props {
   /** The engine config (must be JSON-serializable). */
@@ -25,7 +26,12 @@ export interface Props {
 }
 
 const { config, configId = 'privion-config' } = Astro.props;
-const json = JSON.stringify(config);
+// The JSON goes into a <script> element raw (`set:html`). Labels and
+// descriptions may come from a CMS, so `<` is escaped: a label holding
+// `</script><script>…` would otherwise end the element and run as code.
+// `\u003c` is still `<` to JSON.parse. U+2028/U+2029 are escaped too for
+// older parsers that treat them as line terminators.
+const json = serializeConfig(config);
 ---
 
 <script id={configId} type="application/json" set:html={json}></script>

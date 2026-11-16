@@ -60,10 +60,13 @@ interface ConsentState {
   version: number;         // matches PrivionConsentConfig.version
   source: ConsentSource;   // why the most recent change happened
   userDecided: boolean;    // user has actively chosen via banner/preferences
+  decidedAt?: string;      // ISO 8601, last banner/preferences decision
 }
 ```
 
-`userDecided` is the canonical signal for "should we still show the banner?". It is set to `true` only when source is `'banner'` or `'preferences'`. Programmatic API calls (e.g. a host app pre-seeding from server-side data) do **not** flip it.
+`userDecided` is the canonical signal for "should we still show the banner?". It is set to `true` only when source is `'banner'` or `'preferences'`. Programmatic API calls (e.g. a host app pre-seeding from server-side data) do **not** flip it. A save from the banner or the preferences always counts as a decision, even when it leaves every category unchanged.
+
+`getState()` and every event handler receive a copy of the state; mutating it never reaches the engine.
 
 ### `PrivionConsentConfig`
 
@@ -75,9 +78,10 @@ interface PrivionConsentConfig {
   regionRules?: Record<string, { mode: RegionMode }>;
   defaultRegionMode?: RegionMode;
   storage?: StorageConfig | ConsentStorageAdapter;
-  googleConsentMode?: { mode: 'basic' | 'advanced' };
+  googleConsentMode?: { mode: 'basic' | 'advanced'; waitForUpdate?: number };
   backendSync?: BackendSyncConfig;
   migrations?: ConsentMigration[];
+  consentMaxAgeDays?: number;                            // default 365
 }
 ```
 
@@ -179,9 +183,11 @@ Per-category overrides via `ConsentCategoryConfig.googleMapping`.
 ### Transport
 
 ```text
-1. window.gtag           →  gtag('consent', command, mapping)
-2. window.dataLayer      →  dataLayer.push({ event: 'consent_' + command, ...mapping })
-3. CustomEvent           →  dispatchEvent('privion:google-consent-mode', { command, mapping, mode })
+1. window.gtag present   →  gtag('consent', command, payload)
+2. otherwise             →  dataLayer.push(arguments)  // gtag argument format; dataLayer is created if missing
+3. always                →  dispatchEvent('privion:google-consent-mode', { command, mapping, mode })
+
+payload = mapping, plus wait_for_update (default 500 ms) on 'default'
 ```
 
 ## Region & defaults
@@ -202,7 +208,7 @@ Resolution priority for the effective mode:
 ### Built-in adapters
 
 - **`CookieStorage`** (default) — `document.cookie`, key `privion-consent`, 365-day expiry. Configurable via `StorageConfig.cookieOptions`.
-- **`LocalStorageAdapter`** — `window.localStorage`, same default key.
+- **`LocalStorageAdapter`** — `window.localStorage`, same default key. No expiry of its own; `consentMaxAgeDays` bounds it.
 
 ### Pluggable
 
@@ -227,10 +233,13 @@ interface ConsentMigration {
 ```
 
 On engine construction:
-1. Stored version matches config version, all category ids valid → hydrate as-is.
-2. Stored version matches but a `userDecided`-less state is hydrated → `userDecided` inferred from `source` (banner/preferences → true).
-3. Stored version doesn't match → chain migrations forward through `[from, to]` pairs.
-4. No migration covers the gap → fall back to defaults.
+1. The stored value is shape-checked (any adapter, built-in or custom). Anything unexpected → fall back to defaults; the engine never throws on stored data.
+2. Stored version matches config version, all category ids valid → hydrate. Required categories are forced to `'granted'`.
+3. Stored version matches but a `userDecided`-less state is hydrated → `userDecided` inferred from `source` (banner/preferences → true).
+4. Stored version doesn't match → chain migrations forward through `[from, to]` pairs.
+5. No migration covers the gap → fall back to defaults.
+6. The decision is older than `consentMaxAgeDays` (by `decidedAt`, else `updatedAt`) → fall back to defaults; the banner asks again.
+7. The config has an optional category the stored state lacks (added after the decision) → that category gets its default, the other answers are kept, and `userDecided` becomes `false` so the banner asks again.
 
 ## Backend sync
 

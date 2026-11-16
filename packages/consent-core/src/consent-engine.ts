@@ -8,7 +8,7 @@ import type {
   PrivionConsentConfig,
   RegionMode,
 } from './types.js';
-import { resolveStorage, type ConsentStorageAdapter } from './storage.js';
+import { resolveStorage, validateStoredState, type ConsentStorageAdapter } from './storage.js';
 import { computeGoogleConsentMode, syncGoogleConsentMode } from './google-consent-mode.js';
 
 type EventHandler = (state: ConsentState) => void;
@@ -45,7 +45,12 @@ export class PrivionConsent {
    * Initialize consent state from storage or defaults
    */
   private initializeState(): ConsentState {
-    const stored = this.storage.load();
+    let stored: ConsentState | null = null;
+    try {
+      stored = validateStoredState(this.storage.load());
+    } catch (e) {
+      console.warn('Failed to load stored consent:', e);
+    }
 
     if (stored) {
       const target = this.config.version;
@@ -65,21 +70,42 @@ export class PrivionConsent {
         candidate &&
         Object.keys(candidate.categories).every((id) =>
           this.config.categories.some((cat) => cat.id === id),
-        )
+        ) &&
+        !this.isExpired(candidate)
       ) {
         // Migrate state from older versions that didn't carry `userDecided`:
         // a stored state from `banner`/`preferences` implies the user had
         // already decided; `api` is treated as undecided.
-        return {
+        const restored: ConsentState = {
           ...candidate,
+          categories: { ...candidate.categories },
           userDecided: candidate.userDecided ?? candidate.source !== 'api',
         };
+        // Required categories are always granted, whatever was stored.
+        for (const category of this.config.categories) {
+          if (category.required) {
+            restored.categories[category.id] = 'granted';
+          }
+        }
+        // A category added to the config after the user decided was never
+        // put to them. Give it its default and ask again, keeping the
+        // answers they already gave for the other categories.
+        const fallback = defaultFallback(this.config);
+        const unasked = this.config.categories.filter(
+          (category) => !category.required && !(category.id in restored.categories),
+        );
+        if (unasked.length > 0) {
+          for (const category of unasked) {
+            restored.categories[category.id] = category.defaultStatus ?? fallback;
+          }
+          restored.userDecided = false;
+        }
+        return restored;
       }
     }
 
     // Build initial state from config
-    const regionMode = resolveRegionMode(this.config);
-    const fallback: ConsentStatus = regionMode === 'opt-out' ? 'granted' : 'unknown';
+    const fallback = defaultFallback(this.config);
     const categories: Record<string, ConsentStatus> = {};
 
     for (const category of this.config.categories) {
@@ -102,10 +128,34 @@ export class PrivionConsent {
   }
 
   /**
-   * Get current consent state
+   * A stored decision older than `consentMaxAgeDays` (default 365) no
+   * longer counts. Undecided states never expire: there is nothing to
+   * re-ask.
+   */
+  private isExpired(state: ConsentState): boolean {
+    const maxAgeDays = this.config.consentMaxAgeDays ?? DEFAULT_CONSENT_MAX_AGE_DAYS;
+    if (!Number.isFinite(maxAgeDays)) {
+      return false;
+    }
+    const decided = state.userDecided ?? state.source !== 'api';
+    if (!decided) {
+      return false;
+    }
+    const decidedAt = Date.parse(state.decidedAt ?? state.updatedAt);
+    if (Number.isNaN(decidedAt)) {
+      return true;
+    }
+    return Date.now() - decidedAt > maxAgeDays * 24 * 60 * 60 * 1000;
+  }
+
+  /**
+   * Get current consent state.
+   *
+   * Returns a copy (including the `categories` map): mutating it never
+   * reaches the engine.
    */
   getState(): ConsentState {
-    return { ...this.state };
+    return snapshot(this.state);
   }
 
   /**
@@ -174,7 +224,11 @@ export class PrivionConsent {
           hasChanges = true;
         }
       }
-      return hasChanges;
+      // A save from the banner or the preferences is a decision even when
+      // it leaves every category as it was (e.g. the visitor keeps the
+      // defaults and clicks Save): it must be recorded, or the banner
+      // keeps coming back.
+      return hasChanges || source === 'banner' || source === 'preferences';
     }, source);
   }
 
@@ -197,6 +251,7 @@ export class PrivionConsent {
     this.state.source = source;
     if (source === 'banner' || source === 'preferences') {
       this.state.userDecided = true;
+      this.state.decidedAt = this.state.updatedAt;
     }
 
     this.persist();
@@ -307,8 +362,11 @@ export class PrivionConsent {
   private emit(event: ConsentEvent, state: ConsentState): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
+      // Each emission gets its own copy: handlers cannot mutate engine
+      // state, and React's setState sees a new reference every time.
+      const payload = snapshot(state);
       handlers.forEach((handler) => {
-        this.invokeHandler(event, handler, state);
+        this.invokeHandler(event, handler, payload);
       });
     }
   }
@@ -346,7 +404,13 @@ export class PrivionConsent {
     const mode = options?.mode || this.config.googleConsentMode?.mode || 'basic';
     const mapping = computeGoogleConsentMode(this.state, this.config);
     const isFirstLoad = !this.hasSyncedGoogle && !this.state.userDecided;
-    syncGoogleConsentMode(mapping, mode, isFirstLoad);
+    const waitForUpdate = this.config.googleConsentMode?.waitForUpdate;
+    syncGoogleConsentMode(
+      mapping,
+      mode,
+      isFirstLoad,
+      waitForUpdate !== undefined ? { waitForUpdate } : {},
+    );
     this.hasSyncedGoogle = true;
   }
 
@@ -419,11 +483,11 @@ export class PrivionConsent {
    */
   private buildBackendSyncPayload(cfg: NonNullable<PrivionConsentConfig['backendSync']>): unknown {
     if (cfg.payloadTransform) {
-      return cfg.payloadTransform(this.state);
+      return cfg.payloadTransform(snapshot(this.state));
     }
 
     const payload: Record<string, unknown> = {
-      categories: this.state.categories,
+      categories: { ...this.state.categories },
       version: this.state.version,
       updatedAt: this.state.updatedAt,
       source: this.state.source,
@@ -436,6 +500,16 @@ export class PrivionConsent {
 
     return payload;
   }
+}
+
+const DEFAULT_CONSENT_MAX_AGE_DAYS = 365;
+
+function snapshot(state: ConsentState): ConsentState {
+  return { ...state, categories: { ...state.categories } };
+}
+
+function defaultFallback(config: PrivionConsentConfig): ConsentStatus {
+  return resolveRegionMode(config) === 'opt-out' ? 'granted' : 'unknown';
 }
 
 function sleep(ms: number): Promise<void> {

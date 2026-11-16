@@ -128,11 +128,14 @@ interface PrivionConsentConfig {
   regionRules?: Record<string, { mode: RegionMode }>;
   defaultRegionMode?: RegionMode;
   storage?: StorageConfig | ConsentStorageAdapter;
-  googleConsentMode?: { mode: 'basic' | 'advanced' };
+  googleConsentMode?: { mode: 'basic' | 'advanced'; waitForUpdate?: number };
   backendSync?: BackendSyncConfig;
   migrations?: ConsentMigration[];
+  consentMaxAgeDays?: number;   // default 365; Infinity = never re-ask
 }
 ```
+
+`consentMaxAgeDays` bounds how long a decision stays valid. After that the stored decision is discarded and the banner asks again; supervisory authorities expect re-consent after 6–13 months. It applies to every storage backend, including `localStorage`, which has no expiry of its own.
 
 ### Storage
 
@@ -220,6 +223,7 @@ function syncGoogleConsentMode(
   mapping: GoogleConsentMapping,
   mode?: 'basic' | 'advanced',  // default 'basic'
   isFirstLoad?: boolean,
+  options?: { waitForUpdate?: number },  // default 500, sent with 'default' only
 ): void;
 ```
 
@@ -238,6 +242,7 @@ function initPrivionDom(
 interface PrivionDomOptions {
   root?: HTMLElement | Document;       // default document
   categoryMatchMode?: 'any' | 'all';   // default 'any'
+  reloadOnRevoke?: boolean;            // default true
 }
 
 interface PrivionDomHandle {
@@ -248,6 +253,10 @@ interface PrivionDomHandle {
 Scans `root` for `privion-*` / `[privion]` / `[type="privion"]` elements and wires them to the engine. Sets up a `MutationObserver` on `root` so late-injected elements are activated automatically.
 
 The returned handle's `destroy()` disconnects every observer, unsubscribes consent listeners, and clears tracked element maps. Call it from SPA route teardown and test cleanup — without it MutationObservers from previous mounts keep firing.
+
+#### `reloadOnRevoke`
+
+Default `true`: when consent is withdrawn for a `<script type="privion">` that already ran, the page reloads once. A running script cannot be stopped, so a reload is the only way to make the withdrawal take effect. Gated iframes need no reload: they are reset to their placeholder `src` on withdrawal. Set `false` if the host handles this itself.
 
 #### `categoryMatchMode`
 

@@ -8,6 +8,7 @@ export {
 
 // Client boot helpers
 export { bootPrivion, readSerializedConfig } from './boot.js';
+export { serializeConfig } from './serialize.js';
 
 // Re-export commonly used types so consumers don't also have to depend
 // on @privion-consent/core directly for typing the integration config.

@@ -153,7 +153,19 @@ export interface PrivionConsentConfig {
   migrations?: ConsentMigration[];
   googleConsentMode?: {
     mode: 'basic' | 'advanced';
+    /**
+     * Milliseconds Google tags wait for an `update` after the `default`
+     * command (advanced mode only). Default: 500.
+     */
+    waitForUpdate?: number;
   };
+  /**
+   * How long a user decision stays valid, in days. After that the
+   * stored decision is discarded and the banner asks again.
+   * Supervisory authorities expect re-consent after 6–13 months.
+   * Default: 365. Pass `Infinity` to keep decisions forever.
+   */
+  consentMaxAgeDays?: number;
   backendSync?: BackendSyncConfig;
 }
 
@@ -181,6 +193,12 @@ export interface ConsentState {
   version: number;
   source: ConsentSource;
   userDecided: boolean;
+  /**
+   * ISO timestamp of the last explicit user decision (banner or
+   * preferences). Drives `consentMaxAgeDays`. Absent until the user
+   * decides; states stored by older versions fall back to `updatedAt`.
+   */
+  decidedAt?: string;
 }
 
 /**
