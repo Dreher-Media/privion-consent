@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Dreher-Media/privion-consent/compare/consent-core-v1.1.0...consent-core-v1.2.0) (2026-11-16)
+
+
+### Features
+
+* harden the consent lifecycle ([#66](https://github.com/Dreher-Media/privion-consent/issues/66)) ([6b1b5f0](https://github.com/Dreher-Media/privion-consent/commit/6b1b5f051034e463f3d94a9f4b968d3e27ad523a))
+
 ## [1.1.0](https://github.com/Dreher-Media/privion-consent/compare/consent-core-v1.0.0...consent-core-v1.1.0) (2026-11-16)
 
 
